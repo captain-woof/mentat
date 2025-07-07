@@ -1,0 +1,82 @@
+from browser import createBrowser
+from os import path
+import urllib
+from time_custom import sleepRandom
+
+# Globals
+tooManyReqs = False
+
+# Data to save
+csvDataList = [
+    "email,username,name,hashed_password,password,ip_address,address,phone,vin,license_plate,company,url,social,cryptocurrency_address,domain,database_name"
+]
+
+# Gather information from LinkedIn
+def gather(companyNames: list[str], companyDomains: list[str], outputPath: str):
+    global tooManyReqs
+    global csvDataList
+
+    # Search on LinkedIn
+    print("[+] LinkedIn: Starting browser...")
+    (_,_,_,context) = createBrowser(downloadsPath=path.join(outputPath, "downloads"))
+    page = context.new_page()
+    
+    # page.on("response", processResponse) # This will capture all responses
+    
+    # Search on Google
+    for companyName in companyNames:
+        print(f"[+] LinkedIn: Searching for '{companyName}' employees on Google...")
+        googleDork = urllib.parse.quote_plus(f"(site:linkedin.com/in OR site:linkedin.com/pub) intitle:\"{companyName}\"")
+        page.goto(f"https://www.google.com/search?q={googleDork}")
+        
+        # Keep scraping results
+        while True:
+            try:
+                # Captcha alert
+                page.wait_for_load_state("networkidle")
+                if len(page.get_by_text(text="Our systems have detected unusual traffic from your computer network").all()) != 0:
+                    input("[+] LinkedIn: CAPTCHA detected! Solve it and press Enter...")
+                    page.wait_for_load_state("networkidle")
+
+                # Read all individual results
+                resultsHeadings = page.locator("h3").all()
+                for resultHeading in resultsHeadings:
+                    resultHeading.scroll_into_view_if_needed()
+                    resultHeading.hover()
+
+                    heading = resultHeading.inner_text()
+                    headingHyphenIndex = heading.find("-")
+                    if headingHyphenIndex != -1:
+                        fullName = heading[:headingHyphenIndex].strip()
+                        url = resultHeading.locator("..").get_attribute("href")
+                        address = ""
+
+                        dataDivs = resultHeading.locator("..").locator("..").locator("..").locator("..").locator("..").locator("..").locator("> div").all()
+                        if len(dataDivs) >= 2:
+                            addressEle = (dataDivs[1].locator("> div").all())[0]
+                            if "·" in addressEle.text_content():
+                                address = addressEle.text_content().split("·")[0].strip()
+
+                        csvData = f",{url.split("/")[-1]},{fullName},,,,{address},,,,{companyName},{url},{url},,,linkedin-from-google"
+                        csvDataList.append(csvData)
+                        print(csvData)
+
+                # Click next button
+                nextButton = page.locator("a", has_text="Next").all()
+                if len(nextButton) == 0:
+                    break
+                else:
+                    nextButton = nextButton[0].locator("..")
+                    nextButton.scroll_into_view_if_needed()
+                    nextButton.hover()
+                    sleepRandom(3.0, 5.0)
+                    nextButton.click()
+            except:
+                break
+                
+    # Save results
+    if len(csvDataList) > 1:
+        fileSavePath = path.join(outputPath, "data_linkedin.csv")
+        with open(fileSavePath, "w") as file:
+            file.write("\n".join(csvDataList))
+            print(f"[+] LinkedIn: Results for '{companyName}' saved in '{fileSavePath}'")
