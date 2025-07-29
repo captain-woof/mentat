@@ -116,7 +116,7 @@ def gather(companyNames: list[str], companyDomain: list[str], outputPath: str):
     
     # Save all data
     outputFilePath = path.join(outputPath, "data_dehashed.csv")
-    with open(outputFilePath) as dehashedFile:
+    with open(outputFilePath, "w") as dehashedFile:
         dehashedFile.write("\n".join(csvDataList))
         print(f"[+] DeHashed: Results stored in '{outputFilePath}'")
     
