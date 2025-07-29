@@ -1,5 +1,5 @@
 from browser import createBrowser
-from os import path
+from os import path, mkdir
 import urllib
 from time_custom import sleepRandom
 
@@ -76,6 +76,11 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str):
                 
     # Save results
     if len(csvDataList) > 1:
+        try:
+            mkdir(outputPath)
+        except FileExistsError:
+            pass
+
         fileSavePath = path.join(outputPath, "data_linkedin.csv")
         with open(fileSavePath, "w") as file:
             file.write("\n".join(csvDataList))

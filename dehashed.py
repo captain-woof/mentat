@@ -1,7 +1,7 @@
 from browser import createBrowser
 from playwright.sync_api import Response
 from browser import createBrowser
-from os import environ, path
+from os import environ, path, mkdir
 import time
 from time_custom import sleepRandom
 
@@ -115,6 +115,11 @@ def gather(companyNames: list[str], companyDomain: list[str], outputPath: str):
         pass
     
     # Save all data
+    try:
+        mkdir(outputPath)
+    except FileExistsError:
+        pass
+
     outputFilePath = path.join(outputPath, "data_dehashed.csv")
     with open(outputFilePath, "w") as dehashedFile:
         dehashedFile.write("\n".join(csvDataList))
