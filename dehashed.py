@@ -85,7 +85,7 @@ def gather(companyNames: list[str], companyDomain: list[str], outputPath: str):
         page.get_by_role("button", name="Domain Scan").click()
         searchBar = page.get_by_placeholder("Search")
         searchBar.fill(domain)
-        page.get_by_role("button", name="Find").click()
+        page.wait_for_selector("button.search-button", state="visible").click()
         page.wait_for_selector("button.paginator-button", state="visible")
         isEllipsisPresent = "..." in page.locator("div.paginator").inner_text()
         totalPagesNum = int((page.locator("button.paginator-button").all())[-2 if isEllipsisPresent else -1].inner_text())
