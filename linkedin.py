@@ -2,6 +2,7 @@ from browser import createBrowser
 from os import path, mkdir
 import urllib
 from time_custom import sleepRandom
+from csv_custom import sanitiseForCsv
 
 # Globals
 tooManyReqs = False
@@ -57,7 +58,7 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str):
                             if "·" in addressEle.text_content():
                                 address = addressEle.text_content().split("·")[0].strip()
 
-                        csvData = f",{url.split("/")[-1]},{fullName},,,,{address},,,,{companyName},{url},{url},,,linkedin-from-google"
+                        csvData = f",{url.split("/")[-1]},{sanitiseForCsv(fullName)},,,,{sanitiseForCsv(address)},,,,{sanitiseForCsv(companyName)},{url},{url},,,linkedin-from-google"
                         csvDataList.append(csvData)
                         print(csvData)
 

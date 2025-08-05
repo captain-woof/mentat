@@ -4,6 +4,7 @@ from browser import createBrowser
 from os import environ, path, mkdir
 import time
 from time_custom import sleepRandom
+from csv_custom import sanitiseForCsv
 
 # Global flags
 tooManyReqs = False
@@ -35,20 +36,20 @@ def processResponse(response: Response):
 
                         if type(value) == list: # If value is a list
                             if len(value) == 1: # Store the only present entry
-                                entryCsvList.append(value[0])
+                                entryCsvList.append(sanitiseForCsv(value[0]))
                             else:
                                 if key in ["password","hashed_password"]: # Store all entries
-                                    entryCsvList.append("/".join(value))
+                                    entryCsvList.append(sanitiseForCsv("/".join(value)))
                                 else: # Store longest entry
                                     individualLengths = []
                                     for v in value:
                                         individualLengths.append(len(v))
                                     for v in value:
                                         if len(v) == max(individualLengths):
-                                            entryCsvList.append(v)
+                                            entryCsvList.append(sanitiseForCsv(v))
                                             break
                         else: # If value is singular
-                            entryCsvList.append(value)
+                            entryCsvList.append(sanitiseForCsv(value))
 
                     entryCsv = ",".join(entryCsvList)     
                     csvDataList.append(entryCsv)
