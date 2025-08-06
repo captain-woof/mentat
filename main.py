@@ -10,29 +10,32 @@ dotenv.load_dotenv()
 # MAIN
 if __name__ == "__main__":
     # Parse arguments
-    parser = ArgumentParser()
+    parser = ArgumentParser(description="Mentat helps automating OSINT searches and processing data")
+    subparsers = parser.add_subparsers(dest="mode", description="Module to run. Each module has its own usage and instructions", required=True)
 
-    parser.add_argument("--company-name", action="append", help="Name of the company; can use multiple", default=[])
-    parser.add_argument("--company-domain", action="append", help="Domain of the company; can use multiple", default=[])
-    parser.add_argument("--output-path", action="store", help="Directory to store all output and downloaded files in; default: ./output", default=path.join(path.curdir, "output"))
-    parser.add_argument("--dehashed", action="store_true", help="Acquire data from DeHashed")
-    parser.add_argument("--linkedin", action="store_true", help="Acquire data from LinkedIn")
+    ## Linkedin
+    parserLinkedin = subparsers.add_parser('linkedin', help='Enumerate employees on Linkedin with Google search')
+    parserLinkedin.add_argument("--company-domains", action="append", help="Domain of the company; can use multiple", default=[])
+    parserLinkedin.add_argument("--company-names", action="append", help="Name of the company; can use multiple", default=[])
+    parserLinkedin.add_argument("--output-path", action="store", help="Directory to store all output and downloaded files in; default: ./output", default=path.join(path.curdir, "output"))
+
+    ## DeHased
+    parserDehashed = subparsers.add_parser('dehashed', help='Search on DeHashed for breached data (requires account)')
+    parserDehashed.add_argument("--company-names", action="append", help="Name of the company; can use multiple", default=[])
+    parserDehashed.add_argument("--company-domains", action="append", help="Domain of the company; can use multiple", default=[])
+    parserDehashed.add_argument("--output-path", action="store", help="Directory to store all output and downloaded files in; default: ./output", default=path.join(path.curdir, "output"))
 
     args = parser.parse_args()
-    companyName = args.company_name
-    companyDomain = args.company_domain
+    companyNames = args.company_names
+    companyDomains = args.company_domains
     outputPath = args.output_path
 
     # Dehashed
-    if args.dehashed:
-        dehashed.gather(companyNames=companyName, companyDomain=companyDomain, outputPath=outputPath)
+    if args.mode == "dehashed":
+        dehashed.gather(companyNames=companyNames, companyDomain=companyDomains, outputPath=outputPath)
 
     # LinkedIn
-    if args.linkedin:
-        linkedin.gather(companyNames=companyName, companyDomains=companyDomain, outputPath=outputPath)
+    elif args.mode == "linkedin":
+        linkedin.gather(companyNames=companyNames, companyDomains=companyDomains, outputPath=outputPath)
 
-    # Google
-
-    # Yandex
-
-    # Baidu
+    # TODO: add more
