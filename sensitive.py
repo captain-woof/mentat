@@ -198,9 +198,11 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
 
         # Captcha alert
         pageGoogle.wait_for_load_state("domcontentloaded")
+        pageGoogle.wait_for_load_state("networkidle")
         if len(pageGoogle.get_by_text(text="Our systems have detected unusual traffic from your computer network").all()) != 0:
             input("[+] Sensitive files: CAPTCHA detected! Solve it and press Enter...")
             pageGoogle.wait_for_load_state("domcontentloaded")
+            pageGoogle.wait_for_load_state("networkidle")
 
         for googleDork in googleSearchDorks:
             with lockPrint:
@@ -216,9 +218,11 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
                 try:
                     # Captcha alert
                     pageGoogle.wait_for_load_state("domcontentloaded")
+                    pageGoogle.wait_for_load_state("networkidle")
                     if len(pageGoogle.get_by_text(text="Our systems have detected unusual traffic from your computer network").all()) != 0:
                         input("[+] Sensitive files: CAPTCHA detected! Solve it and press Enter...")
                         pageGoogle.wait_for_load_state("domcontentloaded")
+                        pageGoogle.wait_for_load_state("networkidle")
 
                     # Read all individual results and access them
                     resultsHeadings = pageGoogle.locator("h3").all()
