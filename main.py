@@ -35,23 +35,32 @@ if __name__ == "__main__":
     parserSensitive.add_argument("--wait-before-pagination-max", action="store", type=float, help="Maximum number of seconds to wait before going to next page; default: 5.0", default=5.0)
 
     args = parser.parse_args()
-    companyNames = args.company_names
-    companyDomains = args.company_domains
-    outputPath = args.output_path
-    waitBeforePaginationMin = args.wait_before_pagination_min
-    waitBeforePaginationMax = args.wait_before_pagination_max
-    threads = args.threads
 
     # Dehashed
     if args.mode == "dehashed":
+        companyNames = args.company_names
+        companyDomains = args.company_domains
+        outputPath = args.output_path
+        #waitBeforePaginationMin = args.wait_before_pagination_min
+        #waitBeforePaginationMax = args.wait_before_pagination_max
         dehashed.gather(companyNames=companyNames, companyDomain=companyDomains, outputPath=outputPath)
 
     # LinkedIn
     elif args.mode == "linkedin":
+        companyNames = args.company_names
+        companyDomains = args.company_domains
+        outputPath = args.output_path
+        #waitBeforePaginationMin = args.wait_before_pagination_min
+        #waitBeforePaginationMax = args.wait_before_pagination_max
         linkedin.gather(companyNames=companyNames, companyDomains=companyDomains, outputPath=outputPath)
 
     # Sensitive data
     elif args.mode == "sensitive":
+        companyNames = args.company_names
+        companyDomains = args.company_domains
+        outputPath = args.output_path
+        waitBeforePaginationMin = args.wait_before_pagination_min
+        waitBeforePaginationMax = args.wait_before_pagination_max
         sensitive.gather(
             companyNames=companyNames,
             companyDomains=companyDomains,
