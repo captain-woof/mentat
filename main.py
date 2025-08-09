@@ -19,6 +19,8 @@ if __name__ == "__main__":
     parserLinkedin.add_argument("--company-domains", action="append", help="Domain of the company; can use multiple", default=[])
     parserLinkedin.add_argument("--company-names", action="append", help="Name of the company; can use multiple", default=[])
     parserLinkedin.add_argument("--output-path", action="store", help="Directory to store all output and downloaded files in; default: ./output", default=path.join(path.curdir, "output"))
+    parserLinkedin.add_argument("--wait-before-pagination-min", action="store", type=float, help="Minimum number of seconds to wait before going to next page; default: 3.0", default=3.0)
+    parserLinkedin.add_argument("--wait-before-pagination-max", action="store", type=float, help="Maximum number of seconds to wait before going to next page; default: 5.0", default=5.0)
 
     ## DeHashed
     parserDehashed = subparsers.add_parser('dehashed', description='Search on DeHashed for breached data (requires account)')
@@ -41,8 +43,6 @@ if __name__ == "__main__":
         companyNames = args.company_names
         companyDomains = args.company_domains
         outputPath = args.output_path
-        #waitBeforePaginationMin = args.wait_before_pagination_min
-        #waitBeforePaginationMax = args.wait_before_pagination_max
         dehashed.gather(companyNames=companyNames, companyDomain=companyDomains, outputPath=outputPath)
 
     # LinkedIn
@@ -50,8 +50,8 @@ if __name__ == "__main__":
         companyNames = args.company_names
         companyDomains = args.company_domains
         outputPath = args.output_path
-        #waitBeforePaginationMin = args.wait_before_pagination_min
-        #waitBeforePaginationMax = args.wait_before_pagination_max
+        waitBeforePaginationMin = args.wait_before_pagination_min
+        waitBeforePaginationMax = args.wait_before_pagination_max
         linkedin.gather(companyNames=companyNames, companyDomains=companyDomains, outputPath=outputPath)
 
     # Sensitive data

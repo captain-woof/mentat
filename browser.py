@@ -1,31 +1,41 @@
-from playwright.sync_api import sync_playwright
-from playwright_stealth import Stealth as PlaywrightStealth
+from playwright.sync_api import Browser, Locator
+from camoufox.sync_api import Camoufox
+from browserforge.fingerprints import Screen
 import random
+import string
+from time_custom import sleepRandom
 
 def createBrowser(downloadsPath: str):
-    contextManager = sync_playwright()
-    playwright = contextManager.start()
-    browser = playwright.firefox.launch(
-        headless=False,
-        downloads_path=downloadsPath
-        )
-    context = browser.new_context(
-        color_scheme="dark",
-        geolocation={"latitude": 30.229633483214656, "longitude": -97.74997700334794},
-        permissions=["geolocation"],
-        has_touch=False,
-        is_mobile=False,
-        java_script_enabled=True,
-        locale="en-US",
-        timezone_id="America/Chicago",
-        default_browser_type="firefox",
-        device_scale_factor=1.0,
-        viewport={
-            "height": 720 + random.randint(10, 50),
-            "width": 1280 + random.randint(10, 50)
+    contextManager = Camoufox(
+        config={
+            "mediaDevices:enabled": True,
+            "pdfViewerEnabled": True
         },
-        user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
+        os=["linux", "windows", "macos"],
+        screen=Screen(max_width=1920, max_height=1080),
+        humanize=1.73,
+        headless=False,
+        locale="en-US",
+        downloads_path=downloadsPath,
+        #proxy={
+        #    'server': 'http://example.com:8080',
+        #    'username': 'username',
+        #    'password': 'password'
+        #},
+        geoip=True,
     )
-    PlaywrightStealth().apply_stealth_sync(context)
+    browser: Browser = contextManager.start()
     
-    return (contextManager, playwright, browser, context)
+    return browser
+
+def typeTextHuman(locator: Locator, text: str):
+    for char in text:
+        if random.random() < 0.05:
+            numWrongChars = random.randint(1,3)
+            wrongStr = "".join([random.choice(string.ascii_lowercase) for _ in range(0, numWrongChars)])
+            for wrongChar in wrongStr:
+                locator.type(text=wrongChar, delay=(100.0 + (20.0 * random.random())), timeout=0)
+            sleepRandom(0.1, 0.5)
+            for _ in range(0, numWrongChars):
+                locator.press(key="Backspace", timeout=0)
+        locator.type(text=char, delay=(100.0 + (20.0 * random.random())), timeout=0)

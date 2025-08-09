@@ -1,10 +1,10 @@
-from browser import createBrowser
+from browser import createBrowser, typeTextHuman
 from os import path
 from time_custom import sleepRandom
 from queue import Queue, Empty as ExceptionQueueEmpty
 from threading import Thread, Lock
-from playwright_stealth.context_managers import sync_api
 from file_custom import sanitizeFilename
+from playwright.sync_api import Download
 
 # GLOBAL
 
@@ -113,12 +113,12 @@ def handleScanUrlThread(outputPath: str):
         print("[+] Sensitive files: Scanner thread started")
 
     # Initialise browser
-    (_,_,_,context) = createBrowser(downloadsPath=path.join(outputPath, "downloads"))
-    pageScanner = context.new_page()
+    browser = createBrowser(downloadsPath=path.join(outputPath, "downloads"))
+    pageScanner = browser.new_page()
 
     # Setup download handler
     isDownload = False
-    def handleDownload(download: sync_api.Download):
+    def handleDownload(download: Download):
         nonlocal isDownload
         try:
             downloadPath = path.join(outputPath, "downloads", sanitizeFilename(download.suggested_filename))
@@ -172,8 +172,8 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
 
         # Start browser and Google search page
         print("[+] Sensitive files: Opening google.com in a browser...")
-        (_,_,_,context) = createBrowser(downloadsPath=path.join(outputPath, "downloads"))
-        pageGoogle = context.new_page()
+        browser = createBrowser(downloadsPath=path.join(outputPath, "downloads"))
+        pageGoogle = browser.new_page()
 
         # Create scanner threads list
         print(f"[+] Sensitive files: Starting scanner thread...")
@@ -193,10 +193,11 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
             print(f"[+] Sensitive files: Starting search on Google...")
 
         pageGoogle.goto("https://google.com", wait_until="domcontentloaded")
-        pageGoogle.locator(selector='textarea[title="Search"]').type(text=(companyNames + companyDomains)[0], delay=200.0, timeout=0)
+        typeTextHuman(locator=pageGoogle.locator(selector='textarea[title="Search"]'), text=(companyNames + companyDomains)[0])
         pageGoogle.locator(selector='textarea[title="Search"]').press("Enter")
 
         # Captcha alert
+        attemptsSinceLastCaptcha = 0
         pageGoogle.wait_for_load_state("domcontentloaded")
         pageGoogle.wait_for_load_state("networkidle")
         if len(pageGoogle.get_by_text(text="Our systems have detected unusual traffic from your computer network").all()) != 0:
@@ -210,7 +211,7 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
 
             # Enter the dork
             pageGoogle.locator(selector='textarea[aria-label="Search"]').clear()
-            pageGoogle.locator(selector='textarea[aria-label="Search"]').type(text=googleDork, delay=150.0, timeout=0)
+            typeTextHuman(locator=pageGoogle.locator(selector='textarea[aria-label="Search"]'), text=googleDork)
             pageGoogle.locator(selector='textarea[aria-label="Search"]').press("Enter")
 
             # Keep scraping results from each page
@@ -223,6 +224,8 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
                         input("[+] Sensitive files: CAPTCHA detected! Solve it and press Enter...")
                         pageGoogle.wait_for_load_state("domcontentloaded")
                         pageGoogle.wait_for_load_state("networkidle")
+                        attemptsSinceLastCaptcha = 0
+                    attemptsSinceLastCaptcha += 1
 
                     # Read all individual results and access them
                     resultsHeadings = pageGoogle.locator("h3").all()
@@ -233,6 +236,10 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
                         searchResultUrlsQueue.put(searchResultUrl)
                         with lockPrint:
                             print(f">> FOUND '{searchResultUrl}'")
+
+                    # Sleep if it has been long since last Captcha
+                    if attemptsSinceLastCaptcha % 7 == 0:
+                        sleepRandom(max(waitBeforePaginationMin * 3, 10.0), max(waitBeforePaginationMax * 3, 15.0))
 
                     # Click next button
                     nextButton = pageGoogle.locator("a", has_text="Next").all()
@@ -251,13 +258,12 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
             # Sleep before going to next dork
             if waitBeforePaginationMin > 0 or waitBeforePaginationMax > 0:
                 sleepRandom(waitBeforePaginationMin, waitBeforePaginationMax)
-    except Exception:
-        pass
-    finally:
-        isGoogleSearchDone = True
 
-    # Wait for Scanner threads
-    with lockPrint:
-        print(f"[+] Sensitive files: Waiting for all scanner thread to close...")
-    for scannerThread in scannerThreads:
-        scannerThread.join()
+        isGoogleSearchDone = True
+        # Wait for Scanner threads
+        with lockPrint:
+            print(f"[+] Sensitive files: Waiting for all scanner thread to close...")
+        for scannerThread in scannerThreads:
+            scannerThread.join()
+    except Exception as e:
+        print(e)

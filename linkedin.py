@@ -13,17 +13,17 @@ csvDataList = [
 ]
 
 # Gather information from LinkedIn
-def gather(companyNames: list[str], companyDomains: list[str], outputPath: str):
+def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, waitBeforePaginationMin: float, waitBeforePaginationMax: float):
     global tooManyReqs
     global csvDataList
 
+    attemptsSinceLastCaptcha = 0
+
     # Search on LinkedIn
     print("[+] LinkedIn: Starting browser...")
-    (_,_,_,context) = createBrowser(downloadsPath=path.join(outputPath, "downloads"))
-    page = context.new_page()
-    
-    # page.on("response", processResponse) # This will capture all responses
-    
+    browser = createBrowser(downloadsPath=path.join(outputPath, "downloads"))
+    page = browser.new_page()
+        
     # Search on Google
     for companyName in companyNames:
         print(f"[+] LinkedIn: Searching for '{companyName}' employees on Google...")
@@ -38,6 +38,8 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str):
                 if len(page.get_by_text(text="Our systems have detected unusual traffic from your computer network").all()) != 0:
                     input("[+] LinkedIn: CAPTCHA detected! Solve it and press Enter...")
                     page.wait_for_load_state("networkidle")
+                    attemptsSinceLastCaptcha = 0
+                attemptsSinceLastCaptcha += 1
 
                 # Read all individual results
                 resultsHeadings = page.locator("h3").all()
@@ -61,6 +63,10 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str):
                         csvData = f",{url.split("/")[-1]},{sanitiseForCsv(fullName)},,,,{sanitiseForCsv(address)},,,,{sanitiseForCsv(companyName)},{url},{url},,,linkedin-from-google"
                         csvDataList.append(csvData)
                         print(csvData)
+
+                # Sleep if it has been long since last Captcha
+                if attemptsSinceLastCaptcha % 7 == 0:
+                    sleepRandom(max(waitBeforePaginationMin * 3, 10.0), max(waitBeforePaginationMax * 3, 15.0))
 
                 # Click next button
                 nextButton = page.locator("a", has_text="Next").all()
