@@ -5,6 +5,7 @@ from queue import Queue, Empty as ExceptionQueueEmpty
 from threading import Thread, Lock
 from file_custom import sanitizeFilename
 from playwright.sync_api import Download
+import random
 
 # GLOBAL
 
@@ -193,6 +194,7 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
             print(f"[+] Sensitive files: Starting search on Google...")
 
         pageGoogle.goto("https://google.com", wait_until="domcontentloaded")
+        pageGoogle.locator(selector='textarea[title="Search"]').click()
         typeTextHuman(locator=pageGoogle.locator(selector='textarea[title="Search"]'), text=(companyNames + companyDomains)[0])
         pageGoogle.locator(selector='textarea[title="Search"]').press("Enter")
 
@@ -210,9 +212,12 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
                 print(f">> Using Google dork '{googleDork}'")
 
             # Enter the dork
+            pageGoogle.locator(selector='textarea[aria-label="Search"]').click()
             pageGoogle.locator(selector='textarea[aria-label="Search"]').clear()
             typeTextHuman(locator=pageGoogle.locator(selector='textarea[aria-label="Search"]'), text=googleDork)
             pageGoogle.locator(selector='textarea[aria-label="Search"]').press("Enter")
+
+            pageGoogle.go_back(timeout=0, wait_until="domcontentloaded") # TODO: REMOVE
 
             # Keep scraping results from each page
             while True:
@@ -237,9 +242,20 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
                         with lockPrint:
                             print(f">> FOUND '{searchResultUrl}'")
 
-                    # Sleep if it has been long since last Captcha
+                    # If it has been long since last Captcha
                     if attemptsSinceLastCaptcha % 7 == 0:
+                        # Sleep some
                         sleepRandom(max(waitBeforePaginationMin * 3, 10.0), max(waitBeforePaginationMax * 3, 15.0))
+
+                        # Do some junk human search
+                        url = pageGoogle.url
+                        pageGoogle.locator(selector='textarea[aria-label="Search"]').click()
+                        pageGoogle.locator(selector='textarea[aria-label="Search"]').clear()
+                        typeTextHuman(locator=pageGoogle.locator(selector='textarea[aria-label="Search"]'), text=random.choice(companyNames + companyDomains))
+                        pageGoogle.locator(selector='textarea[aria-label="Search"]').press("Enter")
+                        sleepRandom(max(waitBeforePaginationMin, 6.0), max(waitBeforePaginationMax, 10.0))
+                        if pageGoogle.go_back(timeout=0, wait_until="domcontentloaded") is None:
+                            pageGoogle.goto(url=url, timeout=0, wait_until="domcontentloaded")
 
                     # Click next button
                     nextButton = pageGoogle.locator("a", has_text="Next").all()
