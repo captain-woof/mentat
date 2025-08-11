@@ -245,17 +245,19 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
                     # If it has been long since last Captcha
                     if attemptsSinceLastCaptcha % 7 == 0:
                         # Sleep some
-                        sleepRandom(max(waitBeforePaginationMin * 3, 10.0), max(waitBeforePaginationMax * 3, 15.0))
+                        sleepRandom(max(waitBeforePaginationMin * 3, 120.0), max(waitBeforePaginationMax * 3, 180.0))
 
                         # Do some junk human search
                         url = pageGoogle.url
-                        pageGoogle.locator(selector='textarea[aria-label="Search"]').click()
-                        pageGoogle.locator(selector='textarea[aria-label="Search"]').clear()
-                        typeTextHuman(locator=pageGoogle.locator(selector='textarea[aria-label="Search"]'), text=random.choice(companyNames + companyDomains))
-                        pageGoogle.locator(selector='textarea[aria-label="Search"]').press("Enter")
-                        sleepRandom(max(waitBeforePaginationMin, 6.0), max(waitBeforePaginationMax, 10.0))
-                        if pageGoogle.go_back(timeout=0, wait_until="domcontentloaded") is None:
-                            pageGoogle.goto(url=url, timeout=0, wait_until="domcontentloaded")
+
+                        for junkSearchTerm in ["nvidia stock price", "apple stock price", "how to invest in stocks"]:
+                            pageGoogle.locator(selector='textarea[aria-label="Search"]').click()
+                            pageGoogle.locator(selector='textarea[aria-label="Search"]').clear()
+                            typeTextHuman(locator=pageGoogle.locator(selector='textarea[aria-label="Search"]'), text=junkSearchTerm)
+                            pageGoogle.locator(selector='textarea[aria-label="Search"]').press("Enter")
+                            sleepRandom(max(waitBeforePaginationMin, 10.0), max(waitBeforePaginationMax, 15.0))
+                            if pageGoogle.go_back(timeout=0, wait_until="domcontentloaded") is None:
+                                pageGoogle.goto(url=url, timeout=0, wait_until="domcontentloaded")
 
                     # Click next button
                     nextButton = pageGoogle.locator("a", has_text="Next").all()
