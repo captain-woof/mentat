@@ -4,6 +4,7 @@ import dotenv
 import dehashed
 import linkedin
 import sensitive
+import hostname_fuzzer
 
 # Load env vars
 dotenv.load_dotenv()
@@ -36,6 +37,15 @@ if __name__ == "__main__":
     parserSensitive.add_argument("--wait-before-pagination-min", action="store", type=float, help="Minimum number of seconds to wait before going to next page; default: 3.0", default=3.0)
     parserSensitive.add_argument("--wait-before-pagination-max", action="store", type=float, help="Maximum number of seconds to wait before going to next page; default: 5.0", default=5.0)
 
+    ## Hostname fuzzer
+    parserHostnameFuzzer = subparsers.add_parser('hostname-fuzzer', description='Fuzzes for valid hostnames for HTTP(s) servers, by using input lists of domains and IP:PORTs to try.')
+    parserHostnameFuzzer.add_argument("-d", "--domains", action="store", help="List of domains to try", required=True)
+    parserHostnameFuzzer.add_argument("-i", "--ip-ports", action="store", help="List of IP:PORTs to try (newline separated)", required=True)
+    parserHostnameFuzzer.add_argument("--output-csv", action="store", help="CSV output path; default: ./results.csv", default=path.join(path.curdir, "results.csv"))
+    parserHostnameFuzzer.add_argument("-t", "--timeout", action="store", type=int, help="Request timeout in seconds; default: 10", default=10)
+    parserHostnameFuzzer.add_argument("-r", "--retries", action="store", type=int, help="Maximum retries; default: 2", default=2)
+    parserHostnameFuzzer.add_argument("-m", "--max-requests", action="store", type=int, help="Maximum requests per second; default: 100", default=100)
+
     args = parser.parse_args()
 
     # Dehashed
@@ -67,4 +77,21 @@ if __name__ == "__main__":
             outputPath=outputPath,
             waitBeforePaginationMin=waitBeforePaginationMin,
             waitBeforePaginationMax=waitBeforePaginationMax
+            )
+        
+    # Hostname fuzzer
+    elif args.mode == "hostname-fuzzer":
+        domainsFile = args.domains
+        ipPortsFile = args.ip_ports
+        outputCsvFilePath = args.output_csv
+        timeout = args.timeout
+        retries = args.retries
+        maxRequests = args.max_requests
+        hostname_fuzzer.start(
+            domainsFile=domainsFile,
+            ipPortsFile=ipPortsFile,
+            maxRequests=maxRequests,
+            outputCsvFilePath=outputCsvFilePath,
+            retries=retries,
+            timeout=timeout
             )
