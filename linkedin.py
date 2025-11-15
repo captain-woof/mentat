@@ -34,9 +34,11 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
         while True:
             try:
                 # Captcha alert
+                page.wait_for_load_state("domcontentloaded")
                 page.wait_for_load_state("networkidle")
                 if len(page.get_by_text(text="Our systems have detected unusual traffic from your computer network").all()) != 0:
                     input("[+] LinkedIn: CAPTCHA detected! Solve it and press Enter...")
+                    page.wait_for_load_state("domcontentloaded")
                     page.wait_for_load_state("networkidle")
                     attemptsSinceLastCaptcha = 0
                 attemptsSinceLastCaptcha += 1
