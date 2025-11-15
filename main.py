@@ -62,7 +62,13 @@ if __name__ == "__main__":
         outputPath = args.output_path
         waitBeforePaginationMin = args.wait_before_pagination_min
         waitBeforePaginationMax = args.wait_before_pagination_max
-        linkedin.gather(companyNames=companyNames, companyDomains=companyDomains, outputPath=outputPath)
+        linkedin.gather(
+            companyNames=companyNames,
+            companyDomains=companyDomains,
+            outputPath=outputPath,
+            waitBeforePaginationMin=waitBeforePaginationMin,
+            waitBeforePaginationMax=waitBeforePaginationMax
+            )
 
     # Sensitive data
     elif args.mode == "sensitive":
