@@ -245,12 +245,36 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
                     # If it has been long since last Captcha
                     if attemptsSinceLastCaptcha % 7 == 0:
                         # Sleep some
-                        sleepRandom(max(waitBeforePaginationMin * 3, 120.0), max(waitBeforePaginationMax * 3, 180.0))
+                        print("[..] Sleeping to evade Captcha, be patient...")
+                        sleepRandom(max(waitBeforePaginationMin * 3, 90.0), max(waitBeforePaginationMax * 3, 120.0))
 
                         # Do some junk human search
                         url = pageGoogle.url
 
-                        for junkSearchTerm in ["nvidia stock price", "apple stock price", "how to invest in stocks"]:
+                        for junkSearchTerm in [
+                            "nvidia stock price",
+                            "apple stock price",
+                            "how to invest in stocks""best laptop deals",
+                            "how to make cold brew",
+                            "fun facts about space",
+                            "why cats purr",
+                            "easy dinner ideas",
+                            "latest tech news",
+                            "how rainbows form",
+                            "cheap weekend trips",
+                            "python list tutorial",
+                            "is coffee good for you",
+                            "fast workout routines",
+                            "beginner guitar songs",
+                            "how to stay focused",
+                            "famous historical myths",
+                            "what is cloud computing",
+                            "how to spot fake reviews",
+                            "movie recommendations 2025",
+                            "why we procrastinate",
+                            "best free learning websites",
+                            "how to improve memory"
+                            ]:
                             pageGoogle.locator(selector='textarea[aria-label="Search"]').click()
                             pageGoogle.locator(selector='textarea[aria-label="Search"]').clear()
                             typeTextHuman(locator=pageGoogle.locator(selector='textarea[aria-label="Search"]'), text=junkSearchTerm)
