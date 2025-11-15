@@ -48,7 +48,7 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
                     headingHyphenIndex = heading.find("-")
 
                     resultHeading.scroll_into_view_if_needed()
-                    #resultHeading.hover()
+                    # resultHeading.hover()
 
                     if headingHyphenIndex != -1:
                         fullName = heading[:headingHyphenIndex].strip()
@@ -75,7 +75,6 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
                     break
                 else:
                     nextButton = nextButton[0].locator("..")
-                    nextButton.scroll_into_view_if_needed()
                     nextButton.hover()
                     sleepRandom(3.0, 5.0)
                     nextButton.click()

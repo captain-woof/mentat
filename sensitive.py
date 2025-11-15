@@ -237,7 +237,7 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
                     for resultHeading in resultsHeadings:
                         searchResultUrl = resultHeading.locator("..").get_attribute("href")
                         resultHeading.scroll_into_view_if_needed()
-                        resultHeading.hover()
+                        # resultHeading.hover()
                         searchResultUrlsQueue.put(searchResultUrl)
                         with lockPrint:
                             print(f">> FOUND '{searchResultUrl}'")
@@ -265,7 +265,6 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
                         break
                     else:
                         nextButton = nextButton[0].locator("..")
-                        nextButton.scroll_into_view_if_needed()
                         nextButton.hover()
                         if waitBeforePaginationMin > 0 or waitBeforePaginationMax > 0:
                             sleepRandom(waitBeforePaginationMin, waitBeforePaginationMax)
