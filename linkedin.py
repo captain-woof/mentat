@@ -44,11 +44,12 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
                 # Read all individual results
                 resultsHeadings = page.locator("h3").all()
                 for resultHeading in resultsHeadings:
-                    resultHeading.scroll_into_view_if_needed()
-                    resultHeading.hover()
-
                     heading = resultHeading.inner_text()
                     headingHyphenIndex = heading.find("-")
+
+                    resultHeading.scroll_into_view_if_needed()
+                    #resultHeading.hover()
+
                     if headingHyphenIndex != -1:
                         fullName = heading[:headingHyphenIndex].strip()
                         url = resultHeading.locator("..").get_attribute("href")
