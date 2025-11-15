@@ -86,30 +86,31 @@ def gather(companyNames: list[str], companyDomain: list[str], outputPath: str):
         searchBar = page.get_by_placeholder("Search")
         searchBar.fill(domain)
         page.wait_for_selector("button.search-button", state="visible").click()
+        page.wait_for_selector("button.search-button", state="visible")
         page.wait_for_selector("button.paginator-button", state="visible")
+        page.wait_for_timeout(2000) # Paginator buttons need time to update
         isEllipsisPresent = "..." in page.locator("div.paginator").inner_text()
         totalPagesNum = int((page.locator("button.paginator-button").all())[-2 if isEllipsisPresent else -1].inner_text())
         
         # Start reading page-by-page
-        for currentPageNum in range(1, totalPagesNum):                
+        for currentPageNum in range(1, totalPagesNum):
             # Go to next page
-            if currentPageNum != totalPagesNum - 1:
-                if len(page.locator("button.paginator-button").all()) == 0:
-                    break
-                if isEllipsisPresent:
-                    (page.locator("button.paginator-button").all())[-1].click()
-                else:
-                    (page.locator("button.paginator-button").all())[currentPageNum].click()
-                page.wait_for_event("response") # Response is handled in the 'response' event handler
-                sleepRandom(2, 5)
-                if tooManyReqs:
-                    while tooManyReqs:
-                        sleepRandom(10, 15)
-                        if isEllipsisPresent:
-                            (page.locator("button.paginator-button").all())[-1].click()
-                        else:
-                            (page.locator("button.paginator-button").all())[currentPageNum].click()
-                        page.wait_for_event("response") # Response is handled in the 'response' event handler
+            if len(page.locator("button.paginator-button").all()) == 0:
+                break
+            if isEllipsisPresent:
+                (page.locator("button.paginator-button").all())[-1].click()
+            else:
+                (page.locator("button.paginator-button").all())[currentPageNum].click()
+            page.wait_for_event("response") # Response is handled in the 'response' event handler
+            sleepRandom(2, 5)
+            if tooManyReqs:
+                while tooManyReqs:
+                    sleepRandom(10, 15)
+                    if isEllipsisPresent:
+                        (page.locator("button.paginator-button").all())[-1].click()
+                    else:
+                        (page.locator("button.paginator-button").all())[currentPageNum].click()
+                    page.wait_for_event("response") # Response is handled in the 'response' event handler
     
     # Search using company names
     for name in companyNames:
