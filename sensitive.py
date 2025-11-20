@@ -2,15 +2,20 @@ from browser import createBrowser, typeTextHuman
 from os import path
 from time_custom import sleepRandom
 from queue import Queue, Empty as ExceptionQueueEmpty
-from threading import Thread, Lock
+from threading import Lock
 from file_custom import sanitizeFilename
 from playwright.sync_api import Download
+from concurrent.futures import ThreadPoolExecutor, wait
+from ssh import SSHProxyManager
 import random
 
 # GLOBAL
 
 ## Scanner threads started
 isGoogleSearchDone = False
+
+## Google Dorks queue (yet to be used)
+googleSearchDorks = Queue()
 
 ## Search result URLs queue (URLs yet to be scanned)
 searchResultUrlsQueue = Queue()
@@ -35,6 +40,7 @@ def generateGoogleSearchDorks(companyNames: list[str], companyDomains: list[str]
     Returns:
         A large list of specific, granular dork strings.
     """
+    global googleSearchDorks
     if not companyNames and not companyDomains:
         return []
 
@@ -77,38 +83,36 @@ def generateGoogleSearchDorks(companyNames: list[str], companyDomains: list[str]
     ]
     
     # Generate dorks by iterating through every combination
-    generatedDorks = []    
 
     ## Dorks for searching in company domains and subdomains
     for companyDomain in companyDomains:
         for filetype in sensitiveFiletypes:
-            generatedDorks.append(f'site:*.{companyDomain} filetype:{filetype}')
-            generatedDorks.append(f'site:{companyDomain} filetype:{filetype}')
+            googleSearchDorks.put(f'site:*.{companyDomain} filetype:{filetype}')
+            googleSearchDorks.put(f'site:{companyDomain} filetype:{filetype}')
         for keyword in credentialKeywords + privateKeyNames + confidentialityMarkers:
-            generatedDorks.append(f'site:{companyDomain} intext:"{keyword}"')
-            generatedDorks.append(f'site:*.{companyDomain} intext:"{keyword}"')
+            googleSearchDorks.put(f'site:{companyDomain} intext:"{keyword}"')
+            googleSearchDorks.put(f'site:*.{companyDomain} intext:"{keyword}"')
         for keyword in directoryListingKeywords:
-            generatedDorks.append(f'site:{companyDomain} intitle:"index of" intext:"{keyword}"')
-            generatedDorks.append(f'site:*.{companyDomain} intitle:"index of" intext:"{keyword}"')
+            googleSearchDorks.put(f'site:{companyDomain} intitle:"index of" intext:"{keyword}"')
+            googleSearchDorks.put(f'site:*.{companyDomain} intitle:"index of" intext:"{keyword}"')
 
     ## Dorks for searching on 3rd party sites
     targetsTerm = "(" + " OR ".join(f'"{kw}"' for kw in (companyNames + companyDomains + [f"@{domain}" for domain in companyDomains])) + ")"
     for thirdPartySiteTerm in thirdPartySitesTerms:
         for filetype in sensitiveFiletypes:
-            generatedDorks.append(f'{thirdPartySiteTerm} {targetsTerm} filetype:{filetype}')
+            googleSearchDorks.put(f'{thirdPartySiteTerm} {targetsTerm} filetype:{filetype}')
         for keyword in credentialKeywords + privateKeyNames + confidentialityMarkers + directoryListingKeywords:
-            generatedDorks.append(f'{thirdPartySiteTerm} {targetsTerm} intext:"{keyword}"')
+            googleSearchDorks.put(f'{thirdPartySiteTerm} {targetsTerm} intext:"{keyword}"')
         for keyword in credentialKeywords + privateKeyNames + confidentialityMarkers + directoryListingKeywords:
-            generatedDorks.append(f'{thirdPartySiteTerm} intitle:"index of" {targetsTerm} intext:{keyword}"')
+            googleSearchDorks.put(f'{thirdPartySiteTerm} intitle:"index of" {targetsTerm} intext:{keyword}"')
             
-    return generatedDorks
-
 def handleScanUrlThread(outputPath: str):
     """
     Function for individual scanner thread
     """
     global searchResultUrlsQueue
     global isGoogleSearchDone
+    global lockPrint
 
     with lockPrint:
         print("[+] Sensitive files: Scanner thread started")
@@ -136,7 +140,7 @@ def handleScanUrlThread(outputPath: str):
     # Keep processing URLs
     while not isGoogleSearchDone:
         try:
-            searchResultUrl: str = searchResultUrlsQueue.get(timeout=10)
+            searchResultUrl: str = searchResultUrlsQueue.get(timeout=10.0)
             try:
                 pageScanner.goto(searchResultUrl, wait_until="domcontentloaded")
                 # Take screenshot
@@ -160,54 +164,43 @@ def handleScanUrlThread(outputPath: str):
     with lockPrint:
         print("[+] Sensitive files: Scanner thread ended")
 
-def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, waitBeforePaginationMin: float, waitBeforePaginationMax: float):
-    """
-    This function does the actual searching and coordinating
-    """
+def gatherThread(
+        downloadsPath: str,
+        companyNames: list[str],
+        companyDomains: list[str],
+        waitBeforePaginationMin: int,
+        waitBeforePaginationMax: int,
+        proxy: str = None
+        ):
     global isGoogleSearchDone
+    global searchResultUrlsQueue
+    global googleSearchDorks
+    global lockPrint
 
-    try:
-        # Generate Google dorks; special thanks to Google AI studio ;)
-        googleSearchDorks = generateGoogleSearchDorks(companyNames=companyNames, companyDomains=companyDomains)
-        print(f"[+] Sensitive files: {len(googleSearchDorks)} Google dorks generated")
+    browser = createBrowser(
+        downloadsPath=downloadsPath,
+        proxy=proxy
+        )
+    pageGoogle = browser.new_page()
 
-        # Start browser and Google search page
-        print("[+] Sensitive files: Opening google.com in a browser...")
-        browser = createBrowser(downloadsPath=path.join(outputPath, "downloads"))
-        pageGoogle = browser.new_page()
-
-        # Create scanner threads list
-        print(f"[+] Sensitive files: Starting scanner thread...")
-        scannerThreads: list[Thread] = []
-        for _ in range(0, 1):
-            thread = Thread(
-                target=handleScanUrlThread,
-                kwargs={
-                    'outputPath': outputPath,
-                    }
-                )
-            thread.start()
-            scannerThreads.append(thread)
-
-        # Search on Google
-        with lockPrint:
-            print(f"[+] Sensitive files: Starting search on Google...")
-
-        pageGoogle.goto("https://google.com", wait_until="domcontentloaded")
-        pageGoogle.locator(selector='textarea[title="Search"]').click()
-        typeTextHuman(locator=pageGoogle.locator(selector='textarea[title="Search"]'), text=(companyNames + companyDomains)[0])
-        pageGoogle.locator(selector='textarea[title="Search"]').press("Enter")
-
-        # Captcha alert
-        attemptsSinceLastCaptcha = 0
+    pageGoogle.goto("https://google.com", wait_until="domcontentloaded")
+    pageGoogle.locator(selector='textarea[title="Search"]').click()
+    typeTextHuman(locator=pageGoogle.locator(selector='textarea[title="Search"]'), text=(companyNames + companyDomains)[0])
+    pageGoogle.locator(selector='textarea[title="Search"]').press("Enter")
+    
+    # Captcha alert
+    attemptsSinceLastCaptcha = 0
+    pageGoogle.wait_for_load_state("domcontentloaded")
+    pageGoogle.wait_for_load_state("networkidle")
+    if len(pageGoogle.get_by_text(text="Our systems have detected unusual traffic from your computer network").all()) != 0:
+        input("[+] Sensitive files: CAPTCHA detected! Solve it and press Enter...")
         pageGoogle.wait_for_load_state("domcontentloaded")
         pageGoogle.wait_for_load_state("networkidle")
-        if len(pageGoogle.get_by_text(text="Our systems have detected unusual traffic from your computer network").all()) != 0:
-            input("[+] Sensitive files: CAPTCHA detected! Solve it and press Enter...")
-            pageGoogle.wait_for_load_state("domcontentloaded")
-            pageGoogle.wait_for_load_state("networkidle")
-
-        for googleDork in googleSearchDorks:
+    
+    # Go through dorks
+    while True:
+        try:
+            googleDork = googleSearchDorks.get(block=True, timeout=10.0)
             with lockPrint:
                 print(f">> Using Google dork '{googleDork}'")
 
@@ -216,8 +209,6 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
             pageGoogle.locator(selector='textarea[aria-label="Search"]').clear()
             typeTextHuman(locator=pageGoogle.locator(selector='textarea[aria-label="Search"]'), text=googleDork)
             pageGoogle.locator(selector='textarea[aria-label="Search"]').press("Enter")
-
-            pageGoogle.go_back(timeout=0, wait_until="domcontentloaded") # TODO: REMOVE
 
             # Keep scraping results from each page
             while True:
@@ -231,7 +222,6 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
                         pageGoogle.wait_for_load_state("networkidle")
                         attemptsSinceLastCaptcha = 0
                     attemptsSinceLastCaptcha += 1
-
                     # Read all individual results and access them
                     resultsHeadings = pageGoogle.locator("h3").all()
                     for resultHeading in resultsHeadings:
@@ -241,17 +231,15 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
                         searchResultUrlsQueue.put(searchResultUrl)
                         with lockPrint:
                             print(f">> FOUND '{searchResultUrl}'")
-
                     # If it has been long since last Captcha
                     if attemptsSinceLastCaptcha % 7 == 0:
                         # Sleep some
                         print("[..] Sleeping to evade Captcha, be patient...")
                         sleepRandom(max(waitBeforePaginationMin * 3, 90.0), max(waitBeforePaginationMax * 3, 120.0))
-
                         # Do some junk human search
                         url = pageGoogle.url
-
-                        for junkSearchTerm in [
+                        for junkSearchTerm in random.choices(
+                            [
                             "nvidia stock price",
                             "apple stock price",
                             "how to invest in stocks""best laptop deals",
@@ -274,7 +262,9 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
                             "why we procrastinate",
                             "best free learning websites",
                             "how to improve memory"
-                            ]:
+                            ],
+                            k=2
+                        ):
                             pageGoogle.locator(selector='textarea[aria-label="Search"]').click()
                             pageGoogle.locator(selector='textarea[aria-label="Search"]').clear()
                             typeTextHuman(locator=pageGoogle.locator(selector='textarea[aria-label="Search"]'), text=junkSearchTerm)
@@ -282,7 +272,6 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
                             sleepRandom(max(waitBeforePaginationMin, 10.0), max(waitBeforePaginationMax, 15.0))
                             if pageGoogle.go_back(timeout=0, wait_until="domcontentloaded") is None:
                                 pageGoogle.goto(url=url, timeout=0, wait_until="domcontentloaded")
-
                     # Click next button
                     nextButton = pageGoogle.locator("a", has_text="Next").all()
                     if len(nextButton) == 0:
@@ -295,16 +284,92 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
                         nextButton.click()
                 except:
                     break
-
             # Sleep before going to next dork
             if waitBeforePaginationMin > 0 or waitBeforePaginationMax > 0:
                 sleepRandom(waitBeforePaginationMin, waitBeforePaginationMax)
+        except ExceptionQueueEmpty:
+            break
 
-        isGoogleSearchDone = True
-        # Wait for Scanner threads
-        with lockPrint:
-            print(f"[+] Sensitive files: Waiting for all scanner thread to close...")
-        for scannerThread in scannerThreads:
-            scannerThread.join()
+def gather(
+        companyNames: list[str],
+        companyDomains: list[str],
+        outputPath: str,
+        waitBeforePaginationMin: float,
+        waitBeforePaginationMax: float,
+        sshLogins: list[str] = [],
+        sshLoginsKey: str = ""
+    ):
+    """
+    This function does the actual searching and coordinating
+    """
+    global isGoogleSearchDone
+    global searchResultUrlsQueue
+    global googleSearchDorks
+
+    try:
+        # Setup SSH proxies if needed
+        socksProxies = []
+        if len(sshLogins) != 0:
+            ssh_configs = [
+                {
+                    "username": sshLogin.split("@")[0],
+                    "private_key_path": sshLoginsKey,
+                    "ip": sshLogin.split("@")[1]
+                } for sshLogin in sshLogins
+            ]
+
+            sshProxyManager = SSHProxyManager(ssh_configs=ssh_configs)
+            sshProxyManager.start_tunnels()
+            sshProxyManager.test_tunnels()
+
+            socksProxies = sshProxyManager.proxies
+        
+        # Generate Google dorks; special thanks to Google AI studio ;)
+        generateGoogleSearchDorks(companyNames=companyNames, companyDomains=companyDomains)
+        print(f"[+] Sensitive files: {googleSearchDorks.unfinished_tasks} Google dorks generated")
+        
+        # Start Google-handling threads + Scanner thread
+        print("[+] Sensitive files: Opening browser(s)...")
+        with ThreadPoolExecutor(max_workers=max(1, len(socksProxies)) + 1) as threadPoolExecutor:
+            tasks = []
+
+            # Start scanner thread
+            print(f"[+] Sensitive files: Starting scanner thread...")
+            threadPoolExecutor.submit(
+                handleScanUrlThread,
+                outputPath
+            )
+
+            # Start Google-threads
+            print(f"[+] Sensitive files: Starting search on Google...")
+            if len(socksProxies) == 0:
+                tasks.append(
+                    threadPoolExecutor.submit(
+                        gatherThread,
+                        path.join(outputPath, "downloads"),
+                        companyNames,
+                        companyDomains,
+                        waitBeforePaginationMin,
+                        waitBeforePaginationMax
+                    )
+                )
+            else:
+                for socksProxy in socksProxies:
+                    tasks.append(
+                        threadPoolExecutor.submit(
+                            gatherThread,
+                            path.join(outputPath, "downloads"),
+                            companyNames,
+                            companyDomains,
+                            waitBeforePaginationMin,
+                            waitBeforePaginationMax,
+                            socksProxy
+                        )
+                )
+                    
+            wait(tasks)
+
+            isGoogleSearchDone = True
+            print(f"[+] Sensitive files: Waiting for scanner thread to close...")
     except Exception as e:
         print(e)

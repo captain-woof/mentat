@@ -2,6 +2,7 @@ aiohappyeyeballs==2.6.1
 aiohttp==3.12.15
 aiosignal==1.4.0
 attrs==25.3.0
+beautifulsoup4==4.12.2
 browserforge==1.2.3
 camoufox==0.4.11
 certifi==2025.8.3
@@ -21,17 +22,17 @@ orjson==3.11.1
 platformdirs==4.3.8
 playwright==1.53.0
 propcache==0.3.2
+pycurl==7.45.3
 pyee==13.0.0
 PySocks==1.7.1
 python-dotenv==1.1.1
 PyYAML==6.0.2
 requests==2.32.4
 screeninfo==0.8.1
+soupsieve==2.7
 tqdm==4.67.1
 typing_extensions==4.14.0
 ua-parser==1.0.1
 ua-parser-builtins==0.18.0.post1
 urllib3==2.5.0
 yarl==1.20.1
-pycurl==7.45.3
-beautifulsoup4==4.12.2
