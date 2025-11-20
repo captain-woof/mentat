@@ -6,27 +6,31 @@ import string
 from time_custom import sleepRandom
 
 def createBrowser(downloadsPath: str, proxy: str = None):
-    contextManager = Camoufox(
-        config={
-            "mediaDevices:enabled": True,
-            "pdfViewerEnabled": True
-        },
-        os=["linux", "windows", "macos"],
-        screen=Screen(max_width=800, max_height=600),
-        humanize=1.73,
-        headless=False,
-        locale="en-US",
-        downloads_path=downloadsPath,
-        proxy={
-            'server': proxy,
-            #'username': 'username',
-            #'password': 'password'
-        } if proxy in [None, [], ""] else None,
-        geoip=True,
-    )
-    browser: Browser = contextManager.start()
-    
-    return browser
+    try:
+        contextManager = Camoufox(
+            config={
+                "mediaDevices:enabled": True,
+                "pdfViewerEnabled": True
+            },
+            os=["linux", "windows", "macos"],
+            screen=Screen(max_width=800, max_height=600),
+            humanize=1.73,
+            headless=False,
+            locale="en-US",
+            downloads_path=downloadsPath,
+            proxy={
+                'server': proxy,
+                #'username': 'username',
+                #'password': 'password'
+            } if proxy not in [None, [], ""] else None,
+            geoip=True,
+        )
+        browser: Browser = contextManager.start()
+
+        return browser
+    except Exception as e:
+        print(e)
+        return None
 
 def typeTextHuman(locator: Locator, text: str):
     for char in text:
