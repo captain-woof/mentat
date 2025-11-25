@@ -20,6 +20,8 @@ if __name__ == "__main__":
     parserLinkedin.add_argument("--company-domains", action="append", help="Domain of the company; can use multiple", default=[])
     parserLinkedin.add_argument("--company-names", action="append", help="Name of the company; can use multiple", default=[])
     parserLinkedin.add_argument("--output-path", action="store", help="Directory to store all output and downloaded files in; default: ./output", default=path.join(path.curdir, "output"))
+    parserLinkedin.add_argument("--ssh", nargs="*", help="SOCKS5 proxies with SSH login; only one will be randomly chosen; format: USER1@HOST1 USER2@HOST2...", default=[])
+    parserLinkedin.add_argument("--sshKey", action="store", help="Private key filepath for SSH login", default="")
     parserLinkedin.add_argument("--wait-before-pagination-min", action="store", type=float, help="Minimum number of seconds to wait before going to next page; default: 3.0", default=3.0)
     parserLinkedin.add_argument("--wait-before-pagination-max", action="store", type=float, help="Maximum number of seconds to wait before going to next page; default: 5.0", default=5.0)
 
@@ -34,7 +36,7 @@ if __name__ == "__main__":
     parserSensitive.add_argument("--company-names", action="append", help="Name of the company; can use multiple", default=[])
     parserSensitive.add_argument("--company-domains", action="append", help="Domain of the company; can use multiple", default=[])
     parserSensitive.add_argument("--output-path", action="store", help="Directory to store all output and downloaded files in; default: ./output", default=path.join(path.curdir, "output"))
-    parserSensitive.add_argument("--ssh", nargs="*", help="Use SOCKS5 proxies with SSH login; format: USER1@HOST1 USER2@HOST2...", default=[])
+    parserSensitive.add_argument("--ssh", nargs="*", help="Use SOCKS5 proxies with SSH login; each proxy spawns an independent browser; format: USER1@HOST1 USER2@HOST2...", default=[])
     parserSensitive.add_argument("--sshKey", action="store", help="Private key filepath for SSH login", default="")
     parserSensitive.add_argument("--wait-before-pagination-min", action="store", type=float, help="Minimum number of seconds to wait before going to next page; default: 3.0", default=3.0)
     parserSensitive.add_argument("--wait-before-pagination-max", action="store", type=float, help="Maximum number of seconds to wait before going to next page; default: 5.0", default=5.0)
@@ -69,7 +71,9 @@ if __name__ == "__main__":
             companyDomains=companyDomains,
             outputPath=outputPath,
             waitBeforePaginationMin=waitBeforePaginationMin,
-            waitBeforePaginationMax=waitBeforePaginationMax
+            waitBeforePaginationMax=waitBeforePaginationMax,
+            sshLogins=args.ssh,
+            sshLoginsKey=args.sshKey
             )
 
     # Sensitive data

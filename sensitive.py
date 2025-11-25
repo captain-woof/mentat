@@ -277,10 +277,10 @@ def gatherThread(
                     if len(nextButton) == 0:
                         break
                     else:
-                        nextButton = nextButton[0].locator("..")
-                        nextButton.hover()
                         if waitBeforePaginationMin > 0 or waitBeforePaginationMax > 0:
                             sleepRandom(waitBeforePaginationMin, waitBeforePaginationMax)
+                        nextButton = nextButton[0].locator("..")
+                        nextButton.hover()
                         nextButton.click()
                 except:
                     break
@@ -371,5 +371,8 @@ def gather(
 
             isGoogleSearchDone = True
             print(f"[+] Sensitive files: Waiting for scanner thread to close...")
+
+            if len(socksProxies) != 0:
+                sshProxyManager.stop_tunnels()
     except Exception as e:
         print(e)

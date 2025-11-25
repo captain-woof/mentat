@@ -1,8 +1,9 @@
-from browser import createBrowser
+from browser import createBrowser, typeTextHuman
 from os import path, mkdir
-import urllib
 from time_custom import sleepRandom
 from csv_custom import sanitiseForCsv
+from ssh import SSHProxyManager
+import random
 
 # Globals
 tooManyReqs = False
@@ -13,22 +14,61 @@ csvDataList = [
 ]
 
 # Gather information from LinkedIn
-def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, waitBeforePaginationMin: float, waitBeforePaginationMax: float):
+def gather(
+        companyNames: list[str],
+        companyDomains: list[str],
+        outputPath: str,
+        waitBeforePaginationMin: float,
+        waitBeforePaginationMax: float,
+        sshLogins: list[str] = [],
+        sshLoginsKey: str = ""
+        ):
     global tooManyReqs
     global csvDataList
 
     attemptsSinceLastCaptcha = 0
 
+    # Setup SSH proxies if needed
+    sshProxyManager = None
+    if len(sshLogins) != 0:
+        sshLoginUsername, sshLoginIp = random.choice(sshLogins).split("@")
+        ssh_config = {
+                "username": sshLoginUsername,
+                "private_key_path": sshLoginsKey,
+                "ip": sshLoginIp
+            }
+        sshProxyManager = SSHProxyManager(ssh_configs=[ssh_config])
+        sshProxyManager.start_tunnels()
+        sshProxyManager.test_tunnels()
+
     # Search on LinkedIn
     print("[+] LinkedIn: Starting browser...")
-    browser = createBrowser(downloadsPath=path.join(outputPath, "downloads"))
+    browser = createBrowser(
+        downloadsPath=path.join(outputPath, "downloads"),
+        proxy=None if sshProxyManager is None else sshProxyManager.proxies[0]
+        )
     page = browser.new_page()
+
+    page.goto("https://google.com", wait_until="domcontentloaded")
+    page.locator(selector='textarea[title="Search"]').click()
+    typeTextHuman(locator=page.locator(selector='textarea[title="Search"]'), text=(random.choice(companyNames + companyDomains)))
+    page.locator(selector='textarea[title="Search"]').press("Enter")
+    
+    page.wait_for_load_state("domcontentloaded")
+    page.wait_for_load_state("networkidle")
+    if len(page.get_by_text(text="Our systems have detected unusual traffic from your computer network").all()) != 0:
+        input("[+] Sensitive files: CAPTCHA detected! Solve it and press Enter...")
+        page.wait_for_load_state("domcontentloaded")
+        page.wait_for_load_state("networkidle")
         
     # Search on Google
     for companyName in companyNames:
         print(f"[+] LinkedIn: Searching for '{companyName}' employees on Google...")
-        googleDork = urllib.parse.quote_plus(f"(site:linkedin.com/in OR site:linkedin.com/pub) intitle:\"{companyName}\"")
-        page.goto(f"https://www.google.com/search?q={googleDork}")
+        googleDork = f"(site:linkedin.com/in OR site:linkedin.com/pub) intitle:\"{companyName}\""
+        page.locator(selector='textarea[aria-label="Search"]').click()
+        page.locator(selector='textarea[aria-label="Search"]').clear()
+        typeTextHuman(locator=page.locator(selector='textarea[aria-label="Search"]'), text=googleDork)
+        page.locator(selector='textarea[aria-label="Search"]').press("Enter")
         
         # Keep scraping results
         while True:
@@ -49,8 +89,7 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
                     heading = resultHeading.inner_text()
                     headingHyphenIndex = heading.find("-")
 
-                    resultHeading.scroll_into_view_if_needed()
-                    # resultHeading.hover()
+                    resultHeading.hover(force=True)
 
                     if headingHyphenIndex != -1:
                         fullName = heading[:headingHyphenIndex].strip()
@@ -76,9 +115,9 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
                 if len(nextButton) == 0:
                     break
                 else:
+                    sleepRandom(waitBeforePaginationMin, waitBeforePaginationMax)
                     nextButton = nextButton[0].locator("..")
-                    nextButton.hover()
-                    sleepRandom(3.0, 5.0)
+                    nextButton.hover(force=True)
                     nextButton.click()
             except:
                 break
@@ -94,3 +133,7 @@ def gather(companyNames: list[str], companyDomains: list[str], outputPath: str, 
         with open(fileSavePath, "w") as file:
             file.write("\n".join(csvDataList))
             print(f"[+] LinkedIn: Results for '{companyName}' saved in '{fileSavePath}'")
+
+    # Stop SOCKS proxies
+    if len(sshLogins) != 0 and sshProxyManager is not None:
+        sshProxyManager.stop_tunnels()
