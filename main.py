@@ -22,8 +22,8 @@ if __name__ == "__main__":
     parserLinkedin.add_argument("--output-path", action="store", help="Directory to store all output and downloaded files in; default: ./output", default=path.join(path.curdir, "output"))
     parserLinkedin.add_argument("--ssh", nargs="*", help="SOCKS5 proxies with SSH login; only one will be randomly chosen; format: USER1@HOST1 USER2@HOST2...", default=[])
     parserLinkedin.add_argument("--sshKey", action="store", help="Private key filepath for SSH login", default="")
-    parserLinkedin.add_argument("--wait-before-pagination-min", action="store", type=float, help="Minimum number of seconds to wait before going to next page; default: 3.0", default=3.0)
-    parserLinkedin.add_argument("--wait-before-pagination-max", action="store", type=float, help="Maximum number of seconds to wait before going to next page; default: 5.0", default=5.0)
+    parserLinkedin.add_argument("--wait-before-pagination-min", action="store", type=float, help="Minimum number of seconds to wait before going to next page; default: 10.0", default=10.0)
+    parserLinkedin.add_argument("--wait-before-pagination-max", action="store", type=float, help="Maximum number of seconds to wait before going to next page; default: 20.0", default=20.0)
 
     ## DeHashed
     parserDehashed = subparsers.add_parser('dehashed', description='Search on DeHashed for breached data (requires account)')
@@ -38,8 +38,8 @@ if __name__ == "__main__":
     parserSensitive.add_argument("--output-path", action="store", help="Directory to store all output and downloaded files in; default: ./output", default=path.join(path.curdir, "output"))
     parserSensitive.add_argument("--ssh", nargs="*", help="Use SOCKS5 proxies with SSH login; each proxy spawns an independent browser; format: USER1@HOST1 USER2@HOST2...", default=[])
     parserSensitive.add_argument("--sshKey", action="store", help="Private key filepath for SSH login", default="")
-    parserSensitive.add_argument("--wait-before-pagination-min", action="store", type=float, help="Minimum number of seconds to wait before going to next page; default: 3.0", default=3.0)
-    parserSensitive.add_argument("--wait-before-pagination-max", action="store", type=float, help="Maximum number of seconds to wait before going to next page; default: 5.0", default=5.0)
+    parserSensitive.add_argument("--wait-before-pagination-min", action="store", type=float, help="Minimum number of seconds to wait before going to next page; default: 45.0", default=45.0)
+    parserSensitive.add_argument("--wait-before-pagination-max", action="store", type=float, help="Maximum number of seconds to wait before going to next page; default: 75.0", default=75.0)
 
     ## Hostname fuzzer
     parserHostnameFuzzer = subparsers.add_parser('hostname-fuzzer', description='Fuzzes for valid hostnames for HTTP(s) servers, by using input lists of domains and IP:PORTs to try.')
