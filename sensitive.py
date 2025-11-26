@@ -24,7 +24,12 @@ searchResultUrlsQueue = Queue()
 lockPrint = Lock()
 
 # Function to generate a list of Google search dorks
-def generateGoogleSearchDorks(companyNames: list[str], companyDomains: list[str]) -> list[str]:
+def generateGoogleSearchDorks(
+        companyNames: list[str],
+        companyDomains: list[str],
+        skipCompanyDomains: bool,
+        skipThirdParty: bool
+        ) -> list[str]:
     """
     Generates a large list of highly granular Google dorks for deep OSINT.
 
@@ -85,26 +90,28 @@ def generateGoogleSearchDorks(companyNames: list[str], companyDomains: list[str]
     # Generate dorks by iterating through every combination
 
     ## Dorks for searching in company domains and subdomains
-    for companyDomain in companyDomains:
-        for filetype in sensitiveFiletypes:
-            googleSearchDorks.put(f'site:*.{companyDomain} filetype:{filetype}')
-            googleSearchDorks.put(f'site:{companyDomain} filetype:{filetype}')
-        for keyword in credentialKeywords + privateKeyNames + confidentialityMarkers:
-            googleSearchDorks.put(f'site:{companyDomain} intext:"{keyword}"')
-            googleSearchDorks.put(f'site:*.{companyDomain} intext:"{keyword}"')
-        for keyword in directoryListingKeywords:
-            googleSearchDorks.put(f'site:{companyDomain} intitle:"index of" intext:"{keyword}"')
-            googleSearchDorks.put(f'site:*.{companyDomain} intitle:"index of" intext:"{keyword}"')
+    if not skipCompanyDomains:
+        for companyDomain in companyDomains:
+            for filetype in sensitiveFiletypes:
+                googleSearchDorks.put(f'site:*.{companyDomain} filetype:{filetype}')
+                googleSearchDorks.put(f'site:{companyDomain} filetype:{filetype}')
+            for keyword in credentialKeywords + privateKeyNames + confidentialityMarkers:
+                googleSearchDorks.put(f'site:{companyDomain} intext:"{keyword}"')
+                googleSearchDorks.put(f'site:*.{companyDomain} intext:"{keyword}"')
+            for keyword in directoryListingKeywords:
+                googleSearchDorks.put(f'site:{companyDomain} intitle:"index of" intext:"{keyword}"')
+                googleSearchDorks.put(f'site:*.{companyDomain} intitle:"index of" intext:"{keyword}"')
 
     ## Dorks for searching on 3rd party sites
-    targetsTerm = "(" + " OR ".join(f'"{kw}"' for kw in (companyNames + companyDomains + [f"@{domain}" for domain in companyDomains])) + ")"
-    for thirdPartySiteTerm in thirdPartySitesTerms:
-        for filetype in sensitiveFiletypes:
-            googleSearchDorks.put(f'{thirdPartySiteTerm} {targetsTerm} filetype:{filetype}')
-        for keyword in credentialKeywords + privateKeyNames + confidentialityMarkers + directoryListingKeywords:
-            googleSearchDorks.put(f'{thirdPartySiteTerm} {targetsTerm} intext:"{keyword}"')
-        for keyword in credentialKeywords + privateKeyNames + confidentialityMarkers + directoryListingKeywords:
-            googleSearchDorks.put(f'{thirdPartySiteTerm} intitle:"index of" {targetsTerm} intext:{keyword}"')
+    if not skipThirdParty:
+        targetsTerm = "(" + " OR ".join(f'"{kw}"' for kw in (companyNames + companyDomains + [f"@{domain}" for domain in companyDomains])) + ")"
+        for thirdPartySiteTerm in thirdPartySitesTerms:
+            for filetype in sensitiveFiletypes:
+                googleSearchDorks.put(f'{thirdPartySiteTerm} {targetsTerm} filetype:{filetype}')
+            for keyword in credentialKeywords + privateKeyNames + confidentialityMarkers + directoryListingKeywords:
+                googleSearchDorks.put(f'{thirdPartySiteTerm} {targetsTerm} intext:"{keyword}"')
+            for keyword in credentialKeywords + privateKeyNames + confidentialityMarkers + directoryListingKeywords:
+                googleSearchDorks.put(f'{thirdPartySiteTerm} intitle:"index of" {targetsTerm} intext:{keyword}"')
             
 def handleScanUrlThread(outputPath: str):
     """
@@ -263,13 +270,14 @@ def gatherThread(
                             "best free learning websites",
                             "how to improve memory"
                             ],
-                            k=2
+                            k=3
                         ):
                             pageGoogle.locator(selector='textarea[aria-label="Search"]').click()
                             pageGoogle.locator(selector='textarea[aria-label="Search"]').clear()
                             typeTextHuman(locator=pageGoogle.locator(selector='textarea[aria-label="Search"]'), text=junkSearchTerm)
                             pageGoogle.locator(selector='textarea[aria-label="Search"]').press("Enter")
-                            sleepRandom(max(waitBeforePaginationMin, 10.0), max(waitBeforePaginationMax, 15.0))
+                            pageGoogle.mouse.wheel(delta_y=float(random.randint(50, 200)))
+                            sleepRandom(max(waitBeforePaginationMin, 30.0), max(waitBeforePaginationMax, 45.0))
                             if pageGoogle.go_back(timeout=0, wait_until="domcontentloaded") is None:
                                 pageGoogle.goto(url=url, timeout=0, wait_until="domcontentloaded")
                     # Click next button
@@ -297,7 +305,9 @@ def gather(
         waitBeforePaginationMin: float,
         waitBeforePaginationMax: float,
         sshLogins: list[str] = [],
-        sshLoginsKey: str = ""
+        sshLoginsKey: str = "",
+        skipCompanyDomains: bool = False,
+        skipThirdParty: bool = False
     ):
     """
     This function does the actual searching and coordinating
@@ -325,7 +335,12 @@ def gather(
             socksProxies = sshProxyManager.proxies
         
         # Generate Google dorks; special thanks to Google AI studio ;)
-        generateGoogleSearchDorks(companyNames=companyNames, companyDomains=companyDomains)
+        generateGoogleSearchDorks(
+            companyNames=companyNames,
+            companyDomains=companyDomains,
+            skipCompanyDomains=skipCompanyDomains,
+            skipThirdParty=skipThirdParty
+            )
         print(f"[+] Sensitive files: {googleSearchDorks.unfinished_tasks} Google dorks generated")
         
         # Start Google-handling threads + Scanner thread

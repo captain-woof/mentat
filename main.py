@@ -40,6 +40,8 @@ if __name__ == "__main__":
     parserSensitive.add_argument("--sshKey", action="store", help="Private key filepath for SSH login", default="")
     parserSensitive.add_argument("--wait-before-pagination-min", action="store", type=float, help="Minimum number of seconds to wait before going to next page; default: 45.0", default=45.0)
     parserSensitive.add_argument("--wait-before-pagination-max", action="store", type=float, help="Maximum number of seconds to wait before going to next page; default: 75.0", default=75.0)
+    parserSensitive.add_argument("--skip-company-domains", action="store_true", help="Skips Google dorks for searching in company (sub)domains; only third-party sites are searched", default=False)
+    parserSensitive.add_argument("--skip-third-party", action="store_true", help="Skips Google dorks for searching in third-party sites; only company (sub)domains are searched", default=False)
 
     ## Hostname fuzzer
     parserHostnameFuzzer = subparsers.add_parser('hostname-fuzzer', description='Fuzzes for valid hostnames for HTTP(s) servers, by using input lists of domains and IP:PORTs to try.')
@@ -90,7 +92,9 @@ if __name__ == "__main__":
             waitBeforePaginationMin=waitBeforePaginationMin,
             waitBeforePaginationMax=waitBeforePaginationMax,
             sshLogins=args.ssh,
-            sshLoginsKey=args.sshKey
+            sshLoginsKey=args.sshKey,
+            skipCompanyDomains=args.skip_company_domains,
+            skipThirdParty=args.skip_third_party
             )
         
     # Hostname fuzzer
