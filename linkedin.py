@@ -45,6 +45,7 @@ def gather(
     print("[+] LinkedIn: Starting browser...")
     browser = createBrowser(
         downloadsPath=path.join(outputPath, "downloads"),
+        userDataDir=path.join(outputPath, "user_data_dir"),
         proxy=None if sshProxyManager is None else sshProxyManager.proxies[0]
         )
     page = browser.new_page()

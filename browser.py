@@ -4,10 +4,16 @@ from browserforge.fingerprints import Screen
 import random
 import string
 from time_custom import sleepRandom
-from os import path
+from os import path, mkdir
 
-def createBrowser(downloadsPath: str, proxy: str = None):
+def createBrowser(downloadsPath: str, userDataDir: str, proxy: str = None):
     try:
+        userDataDir = f"{userDataDir}{random.randint(100000, 999999)}"
+        try:
+            mkdir(userDataDir)
+        except FileExistsError:
+            pass
+        
         contextManager = Camoufox(
             config={
                 "mediaDevices:enabled": True,
@@ -18,7 +24,7 @@ def createBrowser(downloadsPath: str, proxy: str = None):
             humanize=True,
             headless=False,
             persistent_context=True,
-            user_data_dir=path.join(downloadsPath, "user_data_dir"),
+            user_data_dir=userDataDir,
             locale="en-US",
             downloads_path=downloadsPath,
             proxy={

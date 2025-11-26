@@ -65,7 +65,10 @@ def gather(companyNames: list[str], companyDomain: list[str], outputPath: str):
 
     # Search on DeHashed
     print("[+] DeHashed: Starting browser...")
-    browser = createBrowser(downloadsPath=path.join(outputPath, "downloads"))
+    browser = createBrowser(
+        downloadsPath=path.join(outputPath, "downloads"),
+        userDataDir=path.join(outputPath, "user_data_dir")
+        )
     page = browser.new_page()
     page.on("response", processResponse) # This will capture all responses
     

@@ -125,7 +125,10 @@ def handleScanUrlThread(outputPath: str):
         print("[+] Sensitive files: Scanner thread started")
 
     # Initialise browser
-    browser = createBrowser(downloadsPath=path.join(outputPath, "downloads"))
+    browser = createBrowser(
+        downloadsPath=path.join(outputPath, "downloads"),
+        userDataDir=path.join(outputPath, "user_data_dir")
+        )
     pageScanner = browser.new_page()
 
     # Setup download handler
@@ -173,6 +176,7 @@ def handleScanUrlThread(outputPath: str):
 
 def gatherThread(
         downloadsPath: str,
+        userDataDir: str,
         companyNames: list[str],
         companyDomains: list[str],
         waitBeforePaginationMin: int,
@@ -186,6 +190,7 @@ def gatherThread(
 
     browser = createBrowser(
         downloadsPath=downloadsPath,
+        userDataDir=userDataDir,
         proxy=proxy
         )
     pageGoogle = browser.new_page()
@@ -362,6 +367,7 @@ def gather(
                     threadPoolExecutor.submit(
                         gatherThread,
                         path.join(outputPath, "downloads"),
+                        path.join(outputPath, "user_data_dir"),
                         companyNames,
                         companyDomains,
                         waitBeforePaginationMin,
@@ -374,6 +380,7 @@ def gather(
                         threadPoolExecutor.submit(
                             gatherThread,
                             path.join(outputPath, "downloads"),
+                            path.join(outputPath, "user_data_dir"),
                             companyNames,
                             companyDomains,
                             waitBeforePaginationMin,
