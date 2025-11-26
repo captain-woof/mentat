@@ -4,6 +4,7 @@ from browserforge.fingerprints import Screen
 import random
 import string
 from time_custom import sleepRandom
+from os import path
 
 def createBrowser(downloadsPath: str, proxy: str = None):
     try:
@@ -14,8 +15,10 @@ def createBrowser(downloadsPath: str, proxy: str = None):
             },
             os=["linux", "windows", "macos"],
             screen=Screen(max_width=800, max_height=600),
-            humanize=1.73,
+            humanize=True,
             headless=False,
+            persistent_context=True,
+            user_data_dir=path.join(downloadsPath, "user_data_dir"),
             locale="en-US",
             downloads_path=downloadsPath,
             proxy={
