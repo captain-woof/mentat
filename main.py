@@ -5,6 +5,7 @@ import dehashed
 import linkedin
 import sensitive
 import hostname_fuzzer
+import github
 
 # Load env vars
 dotenv.load_dotenv()
@@ -51,6 +52,15 @@ if __name__ == "__main__":
     parserHostnameFuzzer.add_argument("-t", "--timeout", action="store", type=int, help="Request timeout in seconds; default: 10", default=10)
     parserHostnameFuzzer.add_argument("-r", "--retries", action="store", type=int, help="Maximum retries; default: 2", default=2)
     parserHostnameFuzzer.add_argument("-m", "--max-requests", action="store", type=int, help="Maximum requests per second; default: 100", default=100)
+
+    ## GitHub
+    parserGithub = subparsers.add_parser('github', description='Search for secrets in GitHub repositories')
+    parserGithub.add_argument("-s", "--search-terms", action="append", help="Search term to search for in all repositories; can use multiple; example: 'SSH_KEY'", default=[])
+    parserGithub.add_argument("-u", "--known-users", action="append", help="Known usernames to search for connected repositories; can use multiple; example: 'captain-woof'", default=[])
+    parserGithub.add_argument("-o", "--known-orgs", action="append", help="Known organization names to search for connected repositories; can use multiple; example: 'r-spacex'", default=[])
+    parserGithub.add_argument("-d", "--search-depth", action="store", type=int, help="Recursive search depth; if 1, it only searches for target users/orgs and their owned repositories. If 2, it does the same + looks up the contributors to the found repositories and searches in their owned repositories. And so on...; default: 1", default=1)
+    parserGithub.add_argument("-od", "--output-dir", action="store", help="Output directory for everything; it is advised to make a fresh directory for this.")
+    
 
     args = parser.parse_args()
 
@@ -113,3 +123,17 @@ if __name__ == "__main__":
             retries=retries,
             timeout=timeout
             )
+
+    elif args.mode == "github":
+        searchTerms = args.search_terms
+        knownUsers = args.known_users
+        knownOrgs = args.known_orgs
+        searchDepth = args.search_depth
+        outputDir = args.output_dir
+        github.gather(
+            searchTerms=searchTerms,
+            knownUsers=knownUsers,
+            knownOrgs=knownOrgs,
+            maxSearchDepth=searchDepth,
+            outputDir=outputDir
+        )
