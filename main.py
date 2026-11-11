@@ -61,6 +61,7 @@ if __name__ == "__main__":
     parserGithub.add_argument("-o", "--known-orgs", action="append", help="Known organization names to search for connected repositories; can use multiple; example: 'r-spacex'", default=[])
     parserGithub.add_argument("-d", "--search-depth", action="store", type=int, help="Recursive search depth; if 1, it only searches for target users/orgs and their owned repositories. If 2, it does the same + looks up the contributors to the found repositories and searches in their owned repositories. And so on...; default: 1", default=1)
     parserGithub.add_argument("-od", "--output-dir", action="store", help="Output directory for everything; it is advised to make a fresh directory for this.")
+    parserGithub.add_argument("--no-color", action="store_true", help="Disable coloured STDOUT output; the log file is always plain; colour is also auto-disabled when STDOUT is not a terminal", default=False)
     
 
     args = parser.parse_args()
@@ -144,5 +145,6 @@ if __name__ == "__main__":
             knownOrgs=knownOrgs,
             maxSearchDepth=searchDepth,
             outputDir=outputDir,
-            githubPatToken=githubPatToken
+            githubPatToken=githubPatToken,
+            noColor=args.no_color
         )

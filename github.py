@@ -1,6 +1,6 @@
 from requests import Session
 from requests_ratelimiter import LimiterAdapter
-from os import mkdir, path
+from os import environ, mkdir, path
 import subprocess
 import sys
 import json
@@ -36,6 +36,31 @@ def setupGithubSessions(patToken):
         "X-GitHub-Api-Version": "2026-03-10",
         "Accept": "application/vnd.github.text-match+json"
     })
+
+# ANSI colour codes for STDOUT
+ANSI_RESET = "\x1b[0m"
+ANSI_BOLD = "\x1b[1m"
+ANSI_RED = "\x1b[31m"
+ANSI_GREEN = "\x1b[32m"
+ANSI_YELLOW = "\x1b[33m"
+ANSI_BLUE = "\x1b[34m"
+ANSI_CYAN = "\x1b[36m"
+
+# Whether STDOUT gets colours; the log file always stays plain (set by setupOutputFormatting, called from gather)
+useColor = False
+
+def setupOutputFormatting(noColor):
+    global useColor
+    # Dynamically fall back to no colour if STDOUT is not a real terminal
+    # (pipe, redirect, CI, ...), if NO_COLOR is set, or if the terminal is too dumb
+    useColor = (not noColor) and hasattr(sys.stdout, "isatty") and sys.stdout.isatty() and environ.get("NO_COLOR", "") == "" and environ.get("TERM", "dumb") != "dumb"
+
+def printError(text):
+    # Errors from helper functions are only printed (callers log outcomes via logText); red when colour is on
+    if useColor:
+        print(f"{ANSI_RED}{text}{ANSI_RESET}")
+    else:
+        print(text)
 
 # Assisting functions
 def makeHumanReadableTrufflehogReport(jsonResultsPath, reportPath, stderrText):
@@ -78,7 +103,7 @@ Raw: {finding.get("Raw", "")}
 def runTrufflehog(outputDir, repositoriesToSearchIn, logText):
     # Trufflehog binary is required for scanning; without it, just move on (all data is already saved)
     if shutil.which("trufflehog") == None:
-        logText("[!] 'trufflehog' binary not found in PATH; skipping all trufflehog scans")
+        logText("'trufflehog' binary not found in PATH; skipping all trufflehog scans", kind="error")
         return
 
     # Create results dir OUTSIDE of outputDir, so that filesystem mode does not scan
@@ -90,15 +115,16 @@ def runTrufflehog(outputDir, repositoriesToSearchIn, logText):
     except FileExistsError:
         pass
     except Exception as e:
-        logText(f"[!] Could not create directory '{trufflehogTempDir}'; error: {e}")
+        logText(f"Could not create directory '{trufflehogTempDir}'; error: {e}", level=1, kind="error")
     try:
         mkdir(trufflehogDir)
     except FileExistsError:
         pass
     except Exception as e:
-        logText(f"[!] Could not create directory '{trufflehogDir}'; error: {e}")
+        logText(f"Could not create directory '{trufflehogDir}'; error: {e}", level=1, kind="error")
 
-    logText(f"[.] Running Trufflehog on all repositories...")
+    logText("")
+    logText("Running Trufflehog on all repositories...", kind="stage")
 
     # Run in Local Git mode
     for repositoryToSearchIn in repositoriesToSearchIn:
@@ -106,7 +132,7 @@ def runTrufflehog(outputDir, repositoriesToSearchIn, logText):
 
         # Repo may not have been cloned (e.g. private repo without access); skip instead of scanning nothing
         if not path.exists(gitDir):
-            logText(f"\t[!] Skipping trufflehog git scan for '{repositoryToSearchIn["full_name"]}': no local clone at '{gitDir}'")
+            logText(f"Skipping trufflehog git scan for '{repositoryToSearchIn["full_name"]}': no local clone at '{gitDir}'", level=1, kind="error")
             continue
 
         trufflehogRepoResultsJsonPath = path.join(trufflehogDir, f"{repositoryToSearchIn["full_name"].replace("/", "__")}.json")
@@ -129,7 +155,7 @@ def runTrufflehog(outputDir, repositoriesToSearchIn, logText):
             )
             stdout, stderr = p.communicate()
         except Exception as e:
-            logText(f"\t[!] Failed to run trufflehog on repo '{repositoryToSearchIn["full_name"]}'; error: {e}")
+            logText(f"Failed to run trufflehog on repo '{repositoryToSearchIn["full_name"]}'; error: {e}", level=1, kind="error")
             continue
 
         with open(trufflehogRepoResultsJsonPath, "a") as trufflehogRepoResultsFile:
@@ -142,7 +168,7 @@ def runTrufflehog(outputDir, repositoriesToSearchIn, logText):
             stderrText=stderr
         )
 
-        logText(f"\t[+] Ran trufflehog on repo {repositoryToSearchIn["full_name"]} ({findingsCount} findings); results in '{trufflehogRepoResultsJsonPath}'")
+        logText(f"Repo '{repositoryToSearchIn["full_name"]}': {findingsCount} findings; results in '{trufflehogRepoResultsJsonPath}'", level=1, kind="success")
 
     # Run in filesystem mode
     trufflehogFilesystemResultsJsonPath = path.join(trufflehogDir, "results-from-all-filesystem-files-here.json")
@@ -165,7 +191,7 @@ def runTrufflehog(outputDir, repositoriesToSearchIn, logText):
         )
         stdout, stderr = p.communicate()
     except Exception as e:
-        logText(f"\t[!] Failed to run trufflehog in filesystem mode; error: {e}")
+        logText(f"Failed to run trufflehog in filesystem mode; error: {e}", level=1, kind="error")
         stdout, stderr = "", ""
 
     with open(trufflehogFilesystemResultsJsonPath, "a") as trufflehogFilesystemResultsFile:
@@ -178,7 +204,7 @@ def runTrufflehog(outputDir, repositoriesToSearchIn, logText):
         stderrText=stderr
     )
 
-    logText(f"\t[+] Ran trufflehog on all text results ({findingsCount} findings); output in '{trufflehogFilesystemResultsJsonPath}'")
+    logText(f"Filesystem scan of everything: {findingsCount} findings; results in '{trufflehogFilesystemResultsJsonPath}'", level=1, kind="success")
 
     # All scans done: move results from the temp dir into outputDir
     trufflehogFinalDir = path.join(outputDir, "trufflehog-results")
@@ -190,9 +216,9 @@ def runTrufflehog(outputDir, repositoriesToSearchIn, logText):
             shutil.rmtree(trufflehogTempDir)
         except Exception:
             pass
-        logText(f"\t[+] Moved all trufflehog results to '{trufflehogFinalDir}'")
+        logText(f"Moved all trufflehog results to '{trufflehogFinalDir}'", level=1, kind="success")
     except Exception as e:
-        logText(f"\t[!] Failed to move trufflehog results into '{outputDir}'; results left at '{trufflehogDir}'; error: {e}")
+        logText(f"Failed to move trufflehog results into '{outputDir}'; results left at '{trufflehogDir}'; error: {e}", level=1, kind="error")
 
 def cloneRepository(gitRepositoryCloneUrl, gitRepositorySavePath):
     # Pass the PAT as a per-command HTTP header so that private repos accessible to the token
@@ -214,11 +240,11 @@ def cloneRepository(gitRepositoryCloneUrl, gitRepositorySavePath):
         )
         stdout, stderr = p.communicate()
     except Exception as e:
-        print(f"[!] Failed to run git clone for '{gitRepositoryCloneUrl}'; error: {e}")
+        printError(f"[!] Failed to run git clone for '{gitRepositoryCloneUrl}'; error: {e}")
         return ("", str(e), 1)
 
     if p.returncode != 0:
-        print(f"[!] Failed to clone '{gitRepositoryCloneUrl}'; error: {stderr.strip()}")
+        printError(f"[!] Failed to clone '{gitRepositoryCloneUrl}'; error: {stderr.strip()}")
 
     return (stdout, stderr, p.returncode)
 
@@ -229,13 +255,13 @@ def saveGists(projectDirPath, gistsList = []):
     except FileExistsError:
         pass
     except Exception as e:
-        print(f"[!] Could not create directory '{gistsPath}'; error: {e}")
+        printError(f"[!] Could not create directory '{gistsPath}'; error: {e}")
 
     for gist in gistsList:
         try:
             gistDetails = gist.get("gistDetails", {})
             if gistDetails == {}:
-                print(f"[!] Skipping a gist: no details were downloaded")
+                printError(f"[!] Skipping a gist: no details were downloaded")
                 continue
             gistOwnerLogin = (gistDetails.get("owner") or {}).get("login", "anonymous")
             gistPath = path.join(gistsPath, f"{gistOwnerLogin}_{gistDetails.get("id", "unknown")}.md")
@@ -257,7 +283,7 @@ def saveGists(projectDirPath, gistsList = []):
                 gistFile.write(gistContents)
                 gistFile.flush()
         except Exception as e:
-            print(f"[!] Failed to save a gist; error: {e}")
+            printError(f"[!] Failed to save a gist; error: {e}")
 
 def savePullRequests(repoSaveDirPath, pullRequestsList = []):
     pullRequestsPath = path.join(repoSaveDirPath, "PRs")
@@ -266,7 +292,7 @@ def savePullRequests(repoSaveDirPath, pullRequestsList = []):
     except FileExistsError:
         pass
     except Exception as e:
-        print(f"[!] Could not create directory '{pullRequestsPath}'; error: {e}")
+        printError(f"[!] Could not create directory '{pullRequestsPath}'; error: {e}")
 
     for pullRequest in pullRequestsList:
         try:
@@ -296,7 +322,7 @@ def savePullRequests(repoSaveDirPath, pullRequestsList = []):
                 prFile.write(pullRequestContents)
                 prFile.flush()
         except Exception as e:
-            print(f"[!] Failed to save a PR; error: {e}")
+            printError(f"[!] Failed to save a PR; error: {e}")
 
 
 def saveCommits(repoSaveDirPath, commitsList = []):
@@ -306,7 +332,7 @@ def saveCommits(repoSaveDirPath, commitsList = []):
     except FileExistsError:
         pass
     except Exception as e:
-        print(f"[!] Could not create directory '{commitsPath}'; error: {e}")
+        printError(f"[!] Could not create directory '{commitsPath}'; error: {e}")
 
     for commit in commitsList:
         try:
@@ -337,7 +363,7 @@ def saveCommits(repoSaveDirPath, commitsList = []):
                 prFile.write(pullRequestContents)
                 prFile.flush()
         except Exception as e:
-            print(f"[!] Failed to save a commit; error: {e}")
+            printError(f"[!] Failed to save a commit; error: {e}")
 
 def saveCommitComments(repoSaveDirPath, commitCommentsList = []):
     commitCommentsPath = path.join(repoSaveDirPath, "commit-comments")
@@ -346,7 +372,7 @@ def saveCommitComments(repoSaveDirPath, commitCommentsList = []):
     except FileExistsError:
         pass
     except Exception as e:
-        print(f"[!] Could not create directory '{commitCommentsPath}'; error: {e}")
+        printError(f"[!] Could not create directory '{commitCommentsPath}'; error: {e}")
 
     for commitComment in commitCommentsList:
         try:
@@ -374,7 +400,7 @@ def saveCommitComments(repoSaveDirPath, commitCommentsList = []):
                 commitCommentsFile.write(commitCommentContents)
                 commitCommentsFile.flush()
         except Exception as e:
-            print(f"[!] Failed to save a commit comment; error: {e}")
+            printError(f"[!] Failed to save a commit comment; error: {e}")
 
 def saveIssues(repoSaveDirPath, issuesList = []):
     issuesPath = path.join(repoSaveDirPath, "issues")
@@ -383,7 +409,7 @@ def saveIssues(repoSaveDirPath, issuesList = []):
     except FileExistsError:
         pass
     except Exception as e:
-        print(f"[!] Could not create directory '{issuesPath}'; error: {e}")
+        printError(f"[!] Could not create directory '{issuesPath}'; error: {e}")
 
     for issue in issuesList:
         try:
@@ -410,7 +436,7 @@ Raised by @{issueUserLogin}
                 issueFile.write(issueContents)
                 issueFile.flush()
         except Exception as e:
-            print(f"[!] Failed to save an issue; error: {e}")
+            printError(f"[!] Failed to save an issue; error: {e}")
 
 def saveIssueComments(repoSaveDirPath, issueCommentsList = []):
     issueComments = path.join(repoSaveDirPath, "issue-comments")
@@ -419,7 +445,7 @@ def saveIssueComments(repoSaveDirPath, issueCommentsList = []):
     except FileExistsError:
         pass
     except Exception as e:
-        print(f"[!] Could not create directory '{issueComments}'; error: {e}")
+        printError(f"[!] Could not create directory '{issueComments}'; error: {e}")
 
     for issueComment in issueCommentsList:
         try:
@@ -444,7 +470,7 @@ def saveIssueComments(repoSaveDirPath, issueCommentsList = []):
                 issueFile.write(issueContents)
                 issueFile.flush()
         except Exception as e:
-            print(f"[!] Failed to save an issue comment; error: {e}")
+            printError(f"[!] Failed to save an issue comment; error: {e}")
 
 def getPullRequests(repoFullName = ""):
     isStartingFromPage2 = False
@@ -472,7 +498,7 @@ def getPullRequests(repoFullName = ""):
                 else:
                     break
         except Exception as e:
-            print(f"[!] Request for PRs of repository '{repoFullName}' failed; error: {e}")
+            printError(f"[!] Request for PRs of repository '{repoFullName}' failed; error: {e}")
             break
         # Save next URL for next batch of processing
         try:
@@ -485,11 +511,11 @@ def getPullRequests(repoFullName = ""):
             try:
                 responseJson = response.json()
             except Exception as e:
-                print(f"[!] Could not parse PRs response for repository '{repoFullName}'; error: {e}")
+                printError(f"[!] Could not parse PRs response for repository '{repoFullName}'; error: {e}")
                 break
             allItems.extend(responseJson)
         else:
-            print(f"[!] Failed to get PRs of repository '{repoFullName}'; HTTP {response.status_code}; moving on with results gathered so far")
+            printError(f"[!] Failed to get PRs of repository '{repoFullName}'; HTTP {response.status_code}; moving on with results gathered so far")
             break
 
     # Get the actual PR itself
@@ -504,7 +530,7 @@ def getPullRequests(repoFullName = ""):
             )
             allItems[i]["patchDetails"] = response.text
         except Exception as e:
-            print(f"[!] Failed to get patch details of a PR in repository '{repoFullName}'; error: {e}")
+            printError(f"[!] Failed to get patch details of a PR in repository '{repoFullName}'; error: {e}")
             allItems[i]["patchDetails"] = ""
     return allItems
 
@@ -534,7 +560,7 @@ def getIssues(repoFullName = ""):
                 else:
                     break
         except Exception as e:
-            print(f"[!] Request for issues of repository '{repoFullName}' failed; error: {e}")
+            printError(f"[!] Request for issues of repository '{repoFullName}' failed; error: {e}")
             break
         # Save next URL for next batch of processing
         try:
@@ -547,11 +573,11 @@ def getIssues(repoFullName = ""):
             try:
                 responseJson = response.json()
             except Exception as e:
-                print(f"[!] Could not parse issues response for repository '{repoFullName}'; error: {e}")
+                printError(f"[!] Could not parse issues response for repository '{repoFullName}'; error: {e}")
                 break
             allItems.extend(responseJson)
         else:
-            print(f"[!] Failed to get issues of repository '{repoFullName}'; HTTP {response.status_code}; moving on with results gathered so far")
+            printError(f"[!] Failed to get issues of repository '{repoFullName}'; HTTP {response.status_code}; moving on with results gathered so far")
             break
     return allItems
 
@@ -581,7 +607,7 @@ def getIssueComments(repoFullName = ""):
                 else:
                     break
         except Exception as e:
-            print(f"[!] Request for issue comments of repository '{repoFullName}' failed; error: {e}")
+            printError(f"[!] Request for issue comments of repository '{repoFullName}' failed; error: {e}")
             break
         # Save next URL for next batch of processing
         try:
@@ -594,11 +620,11 @@ def getIssueComments(repoFullName = ""):
             try:
                 responseJson = response.json()
             except Exception as e:
-                print(f"[!] Could not parse issue comments response for repository '{repoFullName}'; error: {e}")
+                printError(f"[!] Could not parse issue comments response for repository '{repoFullName}'; error: {e}")
                 break
             allItems.extend(responseJson)
         else:
-            print(f"[!] Failed to get issue comments of repository '{repoFullName}'; HTTP {response.status_code}; moving on with results gathered so far")
+            printError(f"[!] Failed to get issue comments of repository '{repoFullName}'; HTTP {response.status_code}; moving on with results gathered so far")
             break
     return allItems
 
@@ -628,7 +654,7 @@ def getCommitComments(repoFullName = ""):
                 else:
                     break
         except Exception as e:
-            print(f"[!] Request for commit comments of repository '{repoFullName}' failed; error: {e}")
+            printError(f"[!] Request for commit comments of repository '{repoFullName}' failed; error: {e}")
             break
         # Save next URL for next batch of processing
         try:
@@ -641,11 +667,11 @@ def getCommitComments(repoFullName = ""):
             try:
                 responseJson = response.json()
             except Exception as e:
-                print(f"[!] Could not parse commit comments response for repository '{repoFullName}'; error: {e}")
+                printError(f"[!] Could not parse commit comments response for repository '{repoFullName}'; error: {e}")
                 break
             allItems.extend(responseJson)
         else:
-            print(f"[!] Failed to get commit comments of repository '{repoFullName}'; HTTP {response.status_code}; moving on with results gathered so far")
+            printError(f"[!] Failed to get commit comments of repository '{repoFullName}'; HTTP {response.status_code}; moving on with results gathered so far")
             break
     return allItems
 
@@ -675,7 +701,7 @@ def getForks(repoFullName = ""):
                 else:
                     break
         except Exception as e:
-            print(f"[!] Request for forks of repository '{repoFullName}' failed; error: {e}")
+            printError(f"[!] Request for forks of repository '{repoFullName}' failed; error: {e}")
             break
         # Save next URL for next batch of processing
         try:
@@ -688,11 +714,11 @@ def getForks(repoFullName = ""):
             try:
                 responseJson = response.json()
             except Exception as e:
-                print(f"[!] Could not parse forks response for repository '{repoFullName}'; error: {e}")
+                printError(f"[!] Could not parse forks response for repository '{repoFullName}'; error: {e}")
                 break
             allItems.extend(responseJson)
         else:
-            print(f"[!] Failed to get forks of repository '{repoFullName}'; HTTP {response.status_code}; moving on with results gathered so far")
+            printError(f"[!] Failed to get forks of repository '{repoFullName}'; HTTP {response.status_code}; moving on with results gathered so far")
             break
     return allItems
 
@@ -722,7 +748,7 @@ def getGists(userOrOrgName = ""):
                 else:
                     break
         except Exception as e:
-            print(f"[!] Request for gists of user/organisation '{userOrOrgName}' failed; error: {e}")
+            printError(f"[!] Request for gists of user/organisation '{userOrOrgName}' failed; error: {e}")
             break
         # Save next URL for next batch of processing
         try:
@@ -735,11 +761,11 @@ def getGists(userOrOrgName = ""):
             try:
                 responseJson = response.json()
             except Exception as e:
-                print(f"[!] Could not parse gists response for user/organisation '{userOrOrgName}'; error: {e}")
+                printError(f"[!] Could not parse gists response for user/organisation '{userOrOrgName}'; error: {e}")
                 break
             allItems.extend(responseJson)
         else:
-            print(f"[!] Failed to get gists of user/organisation '{userOrOrgName}'; HTTP {response.status_code}; moving on with results gathered so far")
+            printError(f"[!] Failed to get gists of user/organisation '{userOrOrgName}'; HTTP {response.status_code}; moving on with results gathered so far")
             break
 
     # Get the actual gist itself
@@ -751,7 +777,7 @@ def getGists(userOrOrgName = ""):
             responseJson = response.json()
             allItems[i]["gistDetails"] = responseJson
         except Exception as e:
-            print(f"[!] Failed to get details of a gist of user/organisation '{userOrOrgName}'; error: {e}")
+            printError(f"[!] Failed to get details of a gist of user/organisation '{userOrOrgName}'; error: {e}")
             allItems[i]["gistDetails"] = {}
     return allItems
 
@@ -781,7 +807,7 @@ def getContributorsOfARepository(contributorsUrl):
                 else:
                     break
         except Exception as e:
-            print(f"[!] Request for contributors '{contributorsUrl}' failed; error: {e}")
+            printError(f"[!] Request for contributors '{contributorsUrl}' failed; error: {e}")
             break
         # Save next URL for next batch of processing
         try:
@@ -794,11 +820,11 @@ def getContributorsOfARepository(contributorsUrl):
             try:
                 responseJson = response.json()
             except Exception as e:
-                print(f"[!] Could not parse contributors response '{contributorsUrl}'; error: {e}")
+                printError(f"[!] Could not parse contributors response '{contributorsUrl}'; error: {e}")
                 break
             allItems.extend(responseJson)
         else:
-            print(f"[!] Failed to get contributors '{contributorsUrl}'; HTTP {response.status_code}; moving on with results gathered so far")
+            printError(f"[!] Failed to get contributors '{contributorsUrl}'; HTTP {response.status_code}; moving on with results gathered so far")
             break
     return allItems
 
@@ -829,7 +855,7 @@ def getReposOwnedByUserOrOrg(userOrOrgName, isUser = True):
                 else:
                     break
         except Exception as e:
-            print(f"[!] Request for repositories owned by '{userOrOrgName}' failed; error: {e}")
+            printError(f"[!] Request for repositories owned by '{userOrOrgName}' failed; error: {e}")
             break
         # Save next URL for next batch of processing
         try:
@@ -843,11 +869,60 @@ def getReposOwnedByUserOrOrg(userOrOrgName, isUser = True):
                 responseJson = response.json()
                 items = responseJson["items"]
             except Exception as e:
-                print(f"[!] Could not parse repositories response for '{userOrOrgName}'; error: {e}")
+                printError(f"[!] Could not parse repositories response for '{userOrOrgName}'; error: {e}")
                 break
             allItems.extend(items)
         else:
-            print(f"[!] Failed to get repositories owned by '{userOrOrgName}'; HTTP {response.status_code}; moving on with results gathered so far")
+            printError(f"[!] Failed to get repositories owned by '{userOrOrgName}'; HTTP {response.status_code}; moving on with results gathered so far")
+            break
+    return allItems
+
+def getReposFromSearchTerm(searchTerm):
+    isStartingFromPage2 = False
+    nextUrl = ""
+    allItems = []
+
+    while True:
+        # Make first request to get first batch of data and pagination information
+        try:
+            if not isStartingFromPage2:
+                response = session.get(
+                    url="https://api.github.com/search/repositories",
+                    params={
+                        "q": f"{searchTerm} fork:true",
+                        "per_page": 100,
+                        "page": 1
+                    }
+                )
+                isStartingFromPage2 = True
+            # Make next request to get next batch of data and pagination information
+            else:
+                if nextUrl not in [None, ""]:
+                    response = session.get(
+                        url=nextUrl
+                    )
+                else:
+                    break
+        except Exception as e:
+            printError(f"[!] Request for repositories matching search term '{searchTerm}' failed; error: {e}")
+            break
+        # Save next URL for next batch of processing
+        try:
+            nextUrl = response.links["next"]["url"]
+        except KeyError:
+            nextUrl = ""
+
+        # Process current batch of data
+        if response.ok:
+            try:
+                responseJson = response.json()
+                items = responseJson["items"]
+            except Exception as e:
+                printError(f"[!] Could not parse repositories response for search term '{searchTerm}'; error: {e}")
+                break
+            allItems.extend(items)
+        else:
+            printError(f"[!] Failed to get repositories matching search term '{searchTerm}'; HTTP {response.status_code}; moving on with results gathered so far")
             break
     return allItems
 
@@ -858,16 +933,16 @@ def searchForUser(name=""):
             url=f"https://api.github.com/users/{name}"
         )
     except Exception as e:
-        print(f"[!] Failed to look up user/organisation '{name}'; error: {e}")
+        printError(f"[!] Failed to look up user/organisation '{name}'; error: {e}")
         return None
     if response.ok:
         try:
             return response.json()
         except Exception as e:
-            print(f"[!] Could not parse lookup response for user/organisation '{name}'; error: {e}")
+            printError(f"[!] Could not parse lookup response for user/organisation '{name}'; error: {e}")
             return None
     else:
-        print(f"[!] Failed to look up user/organisation '{name}'; HTTP {response.status_code}")
+        printError(f"[!] Failed to look up user/organisation '{name}'; HTTP {response.status_code}")
         return None
 
 def getCommits(repoFullname="", userOrOrgName=""):
@@ -899,7 +974,7 @@ def getCommits(repoFullname="", userOrOrgName=""):
                     else:
                         break
             except Exception as e:
-                print(f"[!] Request for commits of repository '{repoFullname}' failed; error: {e}")
+                printError(f"[!] Request for commits of repository '{repoFullname}' failed; error: {e}")
                 break
             # Save next URL for next batch of processing
             try:
@@ -912,11 +987,11 @@ def getCommits(repoFullname="", userOrOrgName=""):
                 try:
                     responseJson = response.json()
                 except Exception as e:
-                    print(f"[!] Could not parse commits response for repository '{repoFullname}'; error: {e}")
+                    printError(f"[!] Could not parse commits response for repository '{repoFullname}'; error: {e}")
                     break
                 allItems.extend(responseJson)
             else:
-                print(f"[!] Failed to get commits of repository '{repoFullname}'; HTTP {response.status_code}; moving on with results gathered so far")
+                printError(f"[!] Failed to get commits of repository '{repoFullname}'; HTTP {response.status_code}; moving on with results gathered so far")
                 break
 
         # Get the actual commit itself
@@ -928,7 +1003,7 @@ def getCommits(repoFullname="", userOrOrgName=""):
                 responseJson = response.json()
                 allItems[i]["commitDetails"] = responseJson
             except Exception as e:
-                print(f"[!] Failed to get details of a commit in repository '{repoFullname}'; error: {e}")
+                printError(f"[!] Failed to get details of a commit in repository '{repoFullname}'; error: {e}")
                 allItems[i]["commitDetails"] = {"files": []}
 
         return allItems
@@ -961,7 +1036,7 @@ def getCommits(repoFullname="", userOrOrgName=""):
                     else:
                         break
             except Exception as e:
-                print(f"[!] Request for commits authored by '{userOrOrgName}' failed; error: {e}")
+                printError(f"[!] Request for commits authored by '{userOrOrgName}' failed; error: {e}")
                 break
             # Save next URL for next batch of processing
             try:
@@ -975,11 +1050,11 @@ def getCommits(repoFullname="", userOrOrgName=""):
                     responseJson = response.json()
                     items = responseJson["items"]
                 except Exception as e:
-                    print(f"[!] Could not parse commits response for author '{userOrOrgName}'; error: {e}")
+                    printError(f"[!] Could not parse commits response for author '{userOrOrgName}'; error: {e}")
                     break
                 allItems.extend(items)
             else:
-                print(f"[!] Failed to get commits authored by '{userOrOrgName}'; HTTP {response.status_code}; moving on with results gathered so far")
+                printError(f"[!] Failed to get commits authored by '{userOrOrgName}'; HTTP {response.status_code}; moving on with results gathered so far")
                 break
 
         isStartingFromPage2 = False
@@ -1006,7 +1081,7 @@ def getCommits(repoFullname="", userOrOrgName=""):
                     else:
                         break
             except Exception as e:
-                print(f"[!] Request for commits committed by '{userOrOrgName}' failed; error: {e}")
+                printError(f"[!] Request for commits committed by '{userOrOrgName}' failed; error: {e}")
                 break
             # Save next URL for next batch of processing
             try:
@@ -1020,11 +1095,11 @@ def getCommits(repoFullname="", userOrOrgName=""):
                     responseJson = response.json()
                     items = responseJson["items"]
                 except Exception as e:
-                    print(f"[!] Could not parse commits response for committer '{userOrOrgName}'; error: {e}")
+                    printError(f"[!] Could not parse commits response for committer '{userOrOrgName}'; error: {e}")
                     break
                 allItems.extend(items)
             else:
-                print(f"[!] Failed to get commits committed by '{userOrOrgName}'; HTTP {response.status_code}; moving on with results gathered so far")
+                printError(f"[!] Failed to get commits committed by '{userOrOrgName}'; HTTP {response.status_code}; moving on with results gathered so far")
                 break
 
         # Same commit can appear in both author and committer search results; dedupe before fetching details
@@ -1045,20 +1120,21 @@ def getCommits(repoFullname="", userOrOrgName=""):
                 responseJson = response.json()
                 allItems[i]["commitDetails"] = responseJson
             except Exception as e:
-                print(f"[!] Failed to get details of a commit by '{userOrOrgName}'; error: {e}")
+                printError(f"[!] Failed to get details of a commit by '{userOrOrgName}'; error: {e}")
                 allItems[i]["commitDetails"] = {"files": []}
 
         return allItems
 
 
 # Main function
-def gather(outputDir, githubPatToken="", searchTerms=[], knownUsers=[], knownOrgs=[], maxSearchDepth=1):
+def gather(outputDir, githubPatToken="", searchTerms=[], knownUsers=[], knownOrgs=[], maxSearchDepth=1, noColor=False):
     # TODO: https://github.com/trufflesecurity/trufflehog/releases
 
     # Token comes from main.py (which loads all env vars); without it nothing can be gathered
     if githubPatToken in [None, ""]:
         raise Exception("GitHub PAT Token not found. Check your .env.")
     setupGithubSessions(githubPatToken)
+    setupOutputFormatting(noColor)
 
     # Persistent data
     repositoriesToSearchIn = [] # [{  }]
@@ -1082,15 +1158,36 @@ def gather(outputDir, githubPatToken="", searchTerms=[], knownUsers=[], knownOrg
         print(f"[+] Project output directory '{outputDir}' set up; all logs and outputs would be there")
     except Exception as e:
         # Without the output directory nothing can be saved, so exit altogether
-        print(f"[!] Failed to prepare output directory '{outputDir}'; error: {e}")
+        printError(f"[!] Failed to prepare output directory '{outputDir}'; error: {e}")
         sys.exit(1)
 
-    def logText(text: str):
-        print(text)
-        logOutputFile.write(text + "\n")
+    def logText(text: str, level: int = 0, kind: str = "info"):
+        # Blank text = blank line in both STDOUT and the log file (spacing between groups)
+        if text == "":
+            print()
+            logOutputFile.write("\n")
+            logOutputFile.flush()
+            return
+
+        # STDOUT gets indentation and colours; the log file gets the same lines plain (tabs, no colour)
+        markers = {"stage": "[>]", "info": "[.]", "success": "[+]", "error": "[!]"}
+        colours = {
+            "stage": ANSI_BOLD + ANSI_CYAN,
+            "info": ANSI_BLUE,
+            "success": ANSI_GREEN,
+            "error": ANSI_RED
+        }
+        marker = markers.get(kind, "[.]")
+        indent = "\t" * level
+        plainLine = f"{indent}{marker} {text}"
+        if useColor:
+            print(f"{indent}{colours.get(kind, "")}{marker}{ANSI_RESET} {text}")
+        else:
+            print(plainLine)
+        logOutputFile.write(plainLine + "\n")
         logOutputFile.flush()
 
-    logText(f"[>] Project directory: '{outputDir}'")
+    logText(f"Project directory: '{outputDir}'", kind="stage")
 
     # Find all Depth=1 target repositories
     knownUsersDetailed = []
@@ -1109,8 +1206,10 @@ def gather(outputDir, githubPatToken="", searchTerms=[], knownUsers=[], knownOrg
     knownOrgs = knownOrgsDetailed
 
 
+    logText("")
+    logText("Finding repositories owned by known users/organisations...", kind="stage")
     for knownUser in knownUsers:
-        logText(f"[.] Finding repositories owned by user '{knownUser["login"]}'...")
+        logText(f"Finding repositories owned by user '{knownUser["login"]}'...", level=1)
 
         repositories = getReposOwnedByUserOrOrg(
             userOrOrgName=knownUser["login"],
@@ -1119,9 +1218,9 @@ def gather(outputDir, githubPatToken="", searchTerms=[], knownUsers=[], knownOrg
 
         repositoriesToSearchIn.extend(repositories)
 
-        logText(f"[+] {len(repositories)} repositories found owned by user '{knownUser["login"]}'")
+        logText(f"{len(repositories)} repositories found", level=2, kind="success")
     for knownOrg in knownOrgs:
-        logText(f"[.] Finding repositories owned by organisation '{knownOrg["login"]}'...")
+        logText(f"Finding repositories owned by organisation '{knownOrg["login"]}'...", level=1)
 
         repositories = getReposOwnedByUserOrOrg(
             userOrOrgName=knownOrg["login"],
@@ -1129,19 +1228,44 @@ def gather(outputDir, githubPatToken="", searchTerms=[], knownUsers=[], knownOrg
         )
         repositoriesToSearchIn.extend(repositories)
 
-        logText(f"[+] {len(repositories)} repositories found owned by organisation '{knownOrg["login"]}'")
+        logText(f"{len(repositories)} repositories found", level=2, kind="success")
+
+    # Find repositories matching each given search term; add them deduped, so that
+    # all already-existing code later picks them up just like user/org-owned repositories
+    seenRepositoryFullNames = set(map(lambda x: x["full_name"], repositoriesToSearchIn))
+    if len(searchTerms) > 0:
+        logText("")
+        logText("Finding repositories matching given search terms...", kind="stage")
+    for searchTerm in searchTerms:
+        logText(f"Finding repositories matching search term '{searchTerm}'...", level=1)
+
+        repositories = getReposFromSearchTerm(searchTerm=searchTerm)
+
+        newRepositoriesCount = 0
+        for repository in repositories:
+            if repository["full_name"] not in seenRepositoryFullNames:
+                repository["evidenceChain"] = [
+                    f"Found from search term '{searchTerm}'"
+                ]
+                repositoriesToSearchIn.append(repository)
+                seenRepositoryFullNames.add(repository["full_name"])
+                newRepositoriesCount += 1
+
+        logText(f"{newRepositoriesCount} new repositories found ({len(repositories) - newRepositoriesCount} already known)", level=2, kind="success")
 
     for i in range(0, len(repositoriesToSearchIn)):
-        repositoriesToSearchIn[i]["evidenceChain"] = ["Directly mentioned by user"]
+        # Repositories found via search terms already have their evidence chain; don't overwrite it
+        if "evidenceChain" not in repositoriesToSearchIn[i]:
+            repositoriesToSearchIn[i]["evidenceChain"] = ["Directly mentioned by user"]
         repositoriesToSearchIn[i]["useForFurtherSearchDepth"] = 2
 
-    # Sets for fast membership checks (rebuilding lists on every check is O(n^2) on big targets)
-    seenRepositoryFullNames = set(map(lambda x: x["full_name"], repositoriesToSearchIn))
+    # Set for fast membership checks (rebuilding lists on every check is O(n^2) on big targets)
     seenUserOrOrgLogins = set(map(lambda x: x["login"], knownUsers + knownOrgs))
 
     # Follow search depth, and gather more target repositories
     if maxSearchDepth != 1:
-        logText("[.] Finding contributors to above found repositories, then other repositories owned by them...")
+        logText("")
+        logText("Finding contributors to above found repositories, then other repositories owned by them...", kind="stage")
 
     searchDepth = 2
     while searchDepth <= maxSearchDepth:
@@ -1152,7 +1276,7 @@ def gather(outputDir, githubPatToken="", searchTerms=[], knownUsers=[], knownOrg
             if repositoryToSearchIn["useForFurtherSearchDepth"] == searchDepth:
 
                 # Find contributors to already-found repositories
-                logText(f"[.] Search depth: {searchDepth}; finding contributors to repository '{repositoryToSearchIn["full_name"]}'")
+                logText(f"Search depth {searchDepth} | Repository '{repositoryToSearchIn["full_name"]}': finding contributors and forks...", level=1)
 
                 contributors = getContributorsOfARepository(
                     contributorsUrl=repositoryToSearchIn["contributors_url"]
@@ -1166,10 +1290,9 @@ def gather(outputDir, githubPatToken="", searchTerms=[], knownUsers=[], knownOrg
                         linkedUsersOrOrgs.append(contributor)
                         seenUserOrOrgLogins.add(contributor["login"])
 
-                logText(f"[+] Search depth: {searchDepth}; found {len(contributors)} contributors to repository '{repositoryToSearchIn["full_name"]}'")
+                logText(f"{len(contributors)} contributors found", level=2, kind="success")
 
                 # Find forks of existing repositories
-                logText(f"[.] Search depth: {searchDepth}; finding forks of repository '{repositoryToSearchIn["full_name"]}'")
                 forks = getForks(repoFullName=repositoryToSearchIn["full_name"])
                 for fork in forks:
                     if fork["full_name"] not in seenRepositoryFullNames:
@@ -1179,7 +1302,7 @@ def gather(outputDir, githubPatToken="", searchTerms=[], knownUsers=[], knownOrg
                         fork["useForFurtherSearchDepth"] = searchDepth + 1
                         repositoriesToSearchIn.append(fork)
                         seenRepositoryFullNames.add(fork["full_name"])
-                logText(f"[+] Search depth: {searchDepth}; found {len(forks)} forks to repository '{repositoryToSearchIn["full_name"]}'")
+                logText(f"{len(forks)} forks found", level=2, kind="success")
 
 
 
@@ -1187,7 +1310,7 @@ def gather(outputDir, githubPatToken="", searchTerms=[], knownUsers=[], knownOrg
         for userOrOrg in linkedUsersOrOrgs:
             # Only if user/org was not already processed before
             if userOrOrg["useForFurtherSearchDepth"] == searchDepth:
-                logText(f"[.] Search depth: {searchDepth}; finding repositories owned by {userOrOrg["type"].lower()} '{userOrOrg["login"]}'")
+                logText(f"Search depth {searchDepth} | Finding repositories owned by {userOrOrg["type"].lower()} '{userOrOrg["login"]}'...", level=1)
 
                 repositories = getReposOwnedByUserOrOrg(
                     userOrOrgName=userOrOrg["login"],
@@ -1202,22 +1325,24 @@ def gather(outputDir, githubPatToken="", searchTerms=[], knownUsers=[], knownOrg
                         repositoriesToSearchIn.append(repository)
                         seenRepositoryFullNames.add(repository["full_name"])
 
-                logText(f"[+] Search depth: {searchDepth}; found {len(repositories)} repositories owned by {userOrOrg["type"].lower()} '{userOrOrg["login"]}'")
+                logText(f"{len(repositories)} repositories found", level=2, kind="success")
 
         # Increase search depth by 1 because all processing is done
         searchDepth += 1
 
     # Process all users (knownUsers + knownOrgs + linkedUsersOrOrgs): commits, gists
-    logText("[.] Finding all commits and gists by all given and found users and organsations...")
+    logText("")
+    logText("Finding all commits and gists by all given and found users and organsations...", kind="stage")
 
     for userOrOrg in knownUsers + knownOrgs:
+        logText(f"Provided user/organisation '{userOrOrg["login"]}': finding commits and gists...", level=1)
         response = getCommits(userOrOrgName=userOrOrg["login"])
         for i in range(0, len(response)):
             response[i]["evidenceChain"] = [
                 f"From user/organisation '{userOrOrg["login"]}' which was provided by user"
             ]
         userOrOrgCommitsToSearchIn.extend(response)
-        logText(f"[+] Found {len(response)} commits by given user/organisation '{userOrOrg["login"]}'")
+        logText(f"{len(response)} commits found", level=2, kind="success")
 
         response = getGists(userOrOrgName=userOrOrg["login"])
         for i in range(0, len(response)):
@@ -1225,16 +1350,17 @@ def gather(outputDir, githubPatToken="", searchTerms=[], knownUsers=[], knownOrg
                 f"From user/organisation '{userOrOrg["login"]}' which was provided by user"
             ]
         userOrOrgGistsToSearchIn.extend(response)
-        logText(f"\t[+] found {len(response)} gists by provided user/organisation '{userOrOrg["login"]}'")
+        logText(f"{len(response)} gists found", level=2, kind="success")
 
     for userOrOrg in linkedUsersOrOrgs:
+        logText(f"Discovered user/organisation '{userOrOrg["login"]}': finding commits and gists...", level=1)
         response = getCommits(userOrOrgName=userOrOrg["login"])
         for i in range(0, len(response)):
             response[i]["evidenceChain"] = [
                 f"From user/organisation '{userOrOrg["login"]}' which was found linked to a discovered repository. User/org's evidence chain: {userOrOrg["evidenceChain"]}"
             ]
         userOrOrgCommitsToSearchIn.extend(response)
-        logText(f"[+] Found {len(response)} commits by discovered user/organisation '{userOrOrg["login"]}'")
+        logText(f"{len(response)} commits found", level=2, kind="success")
 
         response = getGists(userOrOrgName=userOrOrg["login"])
         for i in range(0, len(response)):
@@ -1243,76 +1369,75 @@ def gather(outputDir, githubPatToken="", searchTerms=[], knownUsers=[], knownOrg
             ]
         userOrOrgGistsToSearchIn.extend(response)
 
-        logText(f"\t[+] found {len(response)} gists by discovered user/organisation '{userOrOrg["login"]}'")
+        logText(f"{len(response)} gists found", level=2, kind="success")
 
     # Process all repos: commits, commit comments, issues, issue comments and PRs
-    logText("[.] Processing all commits, commit comments, issues, issue comments and PRs of each found repository...")
+    logText("")
+    logText("Processing all commits, commit comments, issues, issue comments and PRs of each found repository...", kind="stage")
 
     for i in range(0, len(repositoriesToSearchIn)):
+        logText(f"Repository '{repositoriesToSearchIn[i]["full_name"]}': finding commits, commit comments, issues, issue comments and PRs...", level=1)
+
         # All commits of the repository
-        logText(f"\t[.] Finding all commits in repository '{repositoriesToSearchIn[i]["full_name"]}'...")
         commits = getCommits(repoFullname=repositoriesToSearchIn[i]["full_name"])
         for j in range(0, len(commits)):
             commits[j]["evidenceChain"] = [
                 f"Commit from repository '{repositoriesToSearchIn[i]["full_name"]}'; repository's evidence chain: {repositoriesToSearchIn[i]["evidenceChain"]}"
             ]
         repositoriesToSearchIn[i]["allCommits"] = commits
-        logText(f"\t[+] Found {len(commits)} commits in repository '{repositoriesToSearchIn[i]["full_name"]}'...")
+        logText(f"{len(commits)} commits found", level=2, kind="success")
 
         # All commit comments of the repository
-        logText(f"\t[.] Finding all commit comments in repository '{repositoriesToSearchIn[i]["full_name"]}'...")
         commitComments = getCommitComments(repoFullName=repositoriesToSearchIn[i]["full_name"])
         for j in range(0, len(commitComments)):
             commitComments[j]["evidenceChain"] = [
                 f"Comment in commit {commitComments[j]["commit_id"]} in repository '{repositoriesToSearchIn[i]["full_name"]}'; repository's evidence chain: {repositoriesToSearchIn[i]["evidenceChain"]}"
             ]
         repositoriesToSearchIn[i]["commitComments"] = commitComments
-        logText(f"\t[+] Found {len(commitComments)} commit comments in repository '{repositoriesToSearchIn[i]["full_name"]}'...")
+        logText(f"{len(commitComments)} commit comments found", level=2, kind="success")
 
         # All issues of the repository
-        logText(f"\t[.] Finding all issues in repository '{repositoriesToSearchIn[i]["full_name"]}'...")
         issues = getIssues(repoFullName=repositoriesToSearchIn[i]["full_name"])
         for j in range(0, len(issues)):
             issues[j]["evidenceChain"] = [
                 f"Issue from repository '{repositoriesToSearchIn[i]["full_name"]}'; repository's evidence chain: {repositoriesToSearchIn[i]["evidenceChain"]}"
             ]
         repositoriesToSearchIn[i]["issues"] = issues
-        logText(f"\t[+] Found {len(issues)} issues in repository '{repositoriesToSearchIn[i]["full_name"]}'...")
+        logText(f"{len(issues)} issues found", level=2, kind="success")
 
         # All issue comments of the repository
-        logText(f"\t[.] Finding all issue comments in repository '{repositoriesToSearchIn[i]["full_name"]}'...")
         issueComments = getIssueComments(repoFullName=repositoriesToSearchIn[i]["full_name"])
         for j in range(0, len(issueComments)):
             issueComments[j]["evidenceChain"] = [
                 f"Comment in issue '{issueComments[j]["html_url"]}' in repository '{repositoriesToSearchIn[i]["full_name"]}'; repository's evidence chain: {repositoriesToSearchIn[i]["evidenceChain"]}"
             ]
         repositoriesToSearchIn[i]["issueComments"] = issueComments
-        logText(f"\t[+] Found {len(issueComments)} issueComments in repository '{repositoriesToSearchIn[i]["full_name"]}'...")
+        logText(f"{len(issueComments)} issue comments found", level=2, kind="success")
 
         # All PRs of the repository
-        logText(f"\t[.] Finding all PRs in repository '{repositoriesToSearchIn[i]["full_name"]}'...")
         pullRequests = getPullRequests(repoFullName=repositoriesToSearchIn[i]["full_name"])
         for j in range(0, len(pullRequests)):
             pullRequests[j]["evidenceChain"] = [
                 f"PR {pullRequests[j]["number"]} from repository '{repositoriesToSearchIn[i]["full_name"]}'; repository's evidence chain: {repositoriesToSearchIn[i]["evidenceChain"]}"
             ]
         repositoriesToSearchIn[i]["pullRequests"] = pullRequests
-        logText(f"\t[+] Found {len(pullRequests)} PRs in repository '{repositoriesToSearchIn[i]["full_name"]}'...")
+        logText(f"{len(pullRequests)} PRs found", level=2, kind="success")
 
     # Download the actual data into proper directories
-    logText(f"[.] Saving all data at '{outputDir}'...")
+    logText("")
+    logText(f"Saving all data at '{outputDir}'...", kind="stage")
 
     saveGists(
             projectDirPath=outputDir,
             gistsList=userOrOrgGistsToSearchIn
         )
-    logText(f"\t [+] Saved all gists")
+    logText("Saved all gists", level=1, kind="success")
 
     saveCommits(
         repoSaveDirPath=outputDir,
         commitsList=userOrOrgCommitsToSearchIn
     )
-    logText(f"\t [+] Saved all commits mapped from users/orgs")
+    logText("Saved all commits mapped from users/orgs", level=1, kind="success")
 
     allReposPath = path.join(outputDir, "repos")
     try:
@@ -1320,7 +1445,7 @@ def gather(outputDir, githubPatToken="", searchTerms=[], knownUsers=[], knownOrg
     except FileExistsError:
         pass
     except Exception as e:
-        logText(f"\t [!] Could not create directory '{allReposPath}'; error: {e}")
+        logText(f"Could not create directory '{allReposPath}'; error: {e}", level=1, kind="error")
     for repositoryToSearchIn in repositoriesToSearchIn:
         repoPath = path.join(allReposPath, repositoryToSearchIn["full_name"].replace("/", "__"))
         try:
@@ -1328,9 +1453,10 @@ def gather(outputDir, githubPatToken="", searchTerms=[], knownUsers=[], knownOrg
         except FileExistsError:
             pass
         except Exception as e:
-            logText(f"\t [!] Could not create directory '{repoPath}'; error: {e}")
+            logText(f"Could not create directory '{repoPath}'; error: {e}", level=1, kind="error")
             continue
 
+        logText(f"Repository '{repositoryToSearchIn["full_name"]}':", level=1)
         saveCommits(
             repoSaveDirPath=repoPath,
             commitsList=repositoryToSearchIn["allCommits"]
@@ -1351,17 +1477,17 @@ def gather(outputDir, githubPatToken="", searchTerms=[], knownUsers=[], knownOrg
             repoSaveDirPath=repoPath,
             pullRequestsList=repositoryToSearchIn["pullRequests"]
         )
-        logText(f"\t [+] Saved all extracted intel from repo '{repositoryToSearchIn["full_name"]}'")
+        logText("Saved all extracted intel", level=2, kind="success")
 
         stdout, stderr, returncode = cloneRepository(
             gitRepositoryCloneUrl=repositoryToSearchIn["clone_url"],
             gitRepositorySavePath=path.join(repoPath, repositoryToSearchIn["name"])
         )
         if returncode == 0:
-            logText(f"\t [+] Cloned repo '{repositoryToSearchIn["full_name"]}'")
+            logText("Cloned", level=2, kind="success")
         else:
             # Sanitise stderr just in case git echoes the credential back
-            logText(f"\t [!] Failed to clone repo '{repositoryToSearchIn["full_name"]}'; error: {stderr.replace(githubPatToken, "***").strip()}")
+            logText(f"Failed to clone; error: {stderr.replace(githubPatToken, "***").strip()}", level=2, kind="error")
 
     # Run trufflehog
     runTrufflehog(
