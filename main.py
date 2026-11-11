@@ -1,5 +1,6 @@
 from argparse import ArgumentParser
-from os import path
+from os import environ, path
+import sys
 import dotenv
 import dehashed
 import linkedin
@@ -130,10 +131,18 @@ if __name__ == "__main__":
         knownOrgs = args.known_orgs
         searchDepth = args.search_depth
         outputDir = args.output_dir
+
+        # Load all env vars for this module here
+        githubPatToken = environ.get("GITHUB_PAT_TOKEN")
+        if githubPatToken in [None, ""]:
+            print("[!] GitHub PAT Token not found. Check your .env.")
+            sys.exit(1)
+
         github.gather(
             searchTerms=searchTerms,
             knownUsers=knownUsers,
             knownOrgs=knownOrgs,
             maxSearchDepth=searchDepth,
-            outputDir=outputDir
+            outputDir=outputDir,
+            githubPatToken=githubPatToken
         )
