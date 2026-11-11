@@ -1,6 +1,7 @@
 from requests import Session
 from requests_ratelimiter import LimiterAdapter
 from os import environ, mkdir, path
+import subprocess
 
 # Create session object and configure for all web requests
 githubPatToken = environ["GITHUB_PAT_TOKEN"]
@@ -28,6 +29,428 @@ sessionSlow.headers.update({
 })
 
 # Assisting functions
+def runTrufflehog(outputDir, repositoriesToSearchIn, logText):
+    # Create main dir
+    trufflehogDir = path.join(outputDir, "trufflehog-results")
+    mkdir(trufflehogDir)
+
+    logText(f"[.] Running Trufflehog on all repositories...")
+
+    # Run in Local Git mode
+    for repositoryToSearchIn in repositoriesToSearchIn:
+        gitDir = path.join(outputDir, "repos", repositoryToSearchIn["full_name"].replace("/", "__"), repositoryToSearchIn["name"])
+
+        p = subprocess.Popen(
+            args=[
+                "trufflehog",
+                "git",
+                f"--config=rules-trufflehogv3.yml",
+                f"file://{gitDir}"
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        stdout, stderr = p.communicate()
+
+        trufflehogRepoResultsPath = path.join(trufflehogDir, f"{repositoryToSearchIn["full_name"].replace("/", "__")}.txt")
+        with open(trufflehogRepoResultsPath, "a") as trufflehogRepoResultsFile:
+            trufflehogRepoResultsFile.write(stdout + "\n" + stderr)
+            trufflehogRepoResultsFile.flush()
+
+        logText(f"\t[+] Ran trufflehog on repo {repositoryToSearchIn["full_name"]}; results in '{trufflehogRepoResultsPath}'")
+
+    # Run in filesystem mode
+    trufflehogFilesystemResultsPath = path.join(trufflehogDir, "results-from-all-filesystem-files-here.txt")
+    p = subprocess.Popen(
+        args=[
+            "trufflehog",
+            "filesystem",
+            f"--config=rules-trufflehogv3.yml",
+            outputDir
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+    stdout, stderr = p.communicate()
+
+    with open(trufflehogFilesystemResultsPath, "a") as trufflehogFilesystemResultsFile:
+        trufflehogFilesystemResultsFile.write(stdout + "\n" + stderr)
+        trufflehogFilesystemResultsFile.flush()
+
+    logText(f"\t[+] Ran trufflehog on all text results; output in '{trufflehogRepoResultsPath}'")
+
+def cloneRepository(gitRepositoryCloneUrl, gitRepositorySavePath):
+    p = subprocess.Popen(
+        args=[
+            "git",
+            "clone",
+            gitRepositoryCloneUrl,
+            gitRepositorySavePath
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+    stdout, stderr = p.communicate()
+
+    return (stdout, stderr)
+
+def saveGists(projectDirPath, gistsList = []):
+    gistsPath = path.join(projectDirPath, "gists")
+    mkdir(gistsPath)
+
+    for gist in gistsList:
+        gistDetails = gist["gistDetails"]
+        gistPath = path.join(gistsPath, f"{gistDetails["owner"]["login"]}_{gistDetails["id"]}.md")
+
+        gistContents = f"""# Gist {gistDetails["id"]}
+
+------------
+# URL: {gistDetails["html_url"]}
+------------
+# EVIDENCE CHAIN:
+{gist["evidenceChain"]}
+------------
+# CONTENTS:
+------------
+{"".join([f"{gistFileAndContent["filename"]}\n{gistFileAndContent["content"]}\n\n" for gistFileAndContent in gistDetails["files"].values()])}
+
+"""
+        with open(gistPath, "a") as gistFile:
+            gistFile.write(gistContents)
+            gistFile.flush()
+
+def savePullRequests(repoSaveDirPath, pullRequestsList = []):
+    pullRequestsPath = path.join(repoSaveDirPath, "PRs")
+    mkdir(pullRequestsPath)
+
+    for pullRequest in pullRequestsList:
+        patchDetails = pullRequest["patchDetails"]
+
+        pullRequestPath = path.join(pullRequestsPath, f"{pullRequest["user"]["login"]}_{pullRequest["id"]}")
+
+        pullRequestContents = f"""# PR {pullRequest["id"]}
+
+------------        
+# URL: {pullRequest["html_url"]}
+------------
+# EVIDENCE CHAIN:
+{pullRequest["evidenceChain"]}
+------------
+# BODY:
+------------
+{pullRequest["body"]}
+--------------
+# PATCH DETAILS:
+--------------
+{patchDetails}
+
+"""
+        with open(pullRequestPath, "a") as prFile:
+            prFile.write(pullRequestContents)
+            prFile.flush()
+
+
+def saveCommits(repoSaveDirPath, commitsList = []):
+    commitsPath = path.join(repoSaveDirPath, "commits")
+    mkdir(commitsPath)
+
+    for commit in commitsList:
+        commitDetails = commit["commitDetails"]
+
+        commitPath = path.join(commitsPath, f"{commit["author"]["login"]}_{commit["sha"]}")
+
+        pullRequestContents = f"""# Commit {commit["sha"]}
+
+-----------------
+# URL: {commit["html_url"]}
+-----------------
+# EVIDENCE CHAIN:
+{commit["evidenceChain"]}
+-----------------
+# COMMIT MESSAGE:
+-----------------
+{commit["commit"]["message"]}
+-----------------
+# COMMIT DETAILS:
+-----------------
+{"".join([f"{file["filename"]}\n{file["patch"]}\n\n" for file in commitDetails["files"]])}
+
+"""
+        with open(commitPath, "a") as prFile:
+            prFile.write(pullRequestContents)
+            prFile.flush()
+
+def saveCommitComments(repoSaveDirPath, commitCommentsList = []):
+    commitCommentsPath = path.join(repoSaveDirPath, "commit-comments")
+    mkdir(commitCommentsPath)
+
+    for commitComment in commitCommentsList:
+        commitCommentPath = path.join(commitCommentsPath, f"{commitComment["user"]["login"]}_{commitComment["id"]}")
+
+        commitCommentContents = f"""# Commit comment {commitComment["id"]}
+
+-----------------
+# URL: {commitComment["html_url"]}
+-----------------
+# EVIDENCE CHAIN:
+{commitComment["evidenceChain"]}
+-----------------
+# COMMIT ID:
+{commitComment["commit_id"]}
+-----------------
+# COMMIT COMMENT:
+-----------------
+@{commitComment["user"]["login"]} says on file {commitComment["path"]}, line {commitComment["line"]}, position {commitComment["position"]}:
+{commitComment["body"]}
+
+"""
+        with open(commitCommentPath, "a") as commitCommentsFile:
+            commitCommentsFile.write(commitCommentContents)
+            commitCommentsFile.flush()
+
+def saveIssues(repoSaveDirPath, issuesList = []):
+    issuesPath = path.join(repoSaveDirPath, "issues")
+    mkdir(issuesPath)
+
+    for issue in issuesList:
+        issuePath = path.join(issuesPath, f"{issue["user"]["login"]}_{issue["id"]}")
+
+        issueContents = f"""# Issue {issue["id"]}
+
+-----------------
+# URL: {issue["html_url"]}
+-----------------
+# EVIDENCE CHAIN:
+{issue["evidenceChain"]}
+-----------------
+# ISSUE:
+Raised by @{issue["user"]["login"]}
+
+# {issue["title"]}
+
+{issue["body"]}
+
+"""
+        with open(issuePath, "a") as issueFile:
+            issueFile.write(issueContents)
+            issueFile.flush()
+
+def saveIssueComments(repoSaveDirPath, issueCommentsList = []):
+    issueComments = path.join(repoSaveDirPath, "issue-comments")
+    mkdir(issueComments)
+
+    for issueComment in issueCommentsList:
+        issueCommentPath = path.join(issueComments, f"{issueComment["user"]["login"]}_{issueComment["id"]}")
+
+        issueContents = f"""# Issue {issueComment["id"]}
+
+-----------------
+# ISSUE URL: {issueComment["issue_url"]}
+# COMMENT URL: {issueComment["html_url"]}
+-----------------
+# EVIDENCE CHAIN:
+{issueComment["evidenceChain"]}
+-----------------
+# ISSUE COMMENT:
+@{issueComment["user"]["login"]} says:
+{issueComment["body"]}
+
+"""
+        with open(issueCommentPath, "a") as issueFile:
+            issueFile.write(issueContents)
+            issueFile.flush()
+
+def getPullRequests(repoFullName = ""):
+    isStartingFromPage2 = False
+    nextUrl = ""
+    allItems = []
+
+    while True:
+        # Make first request to get first batch of data and pagination information
+        if not isStartingFromPage2:
+            response = session.get(
+                url=f"https://api.github.com/repos/{repoFullName}/pulls",
+                params={
+                    "per_page": 100,
+                    "page": 1
+                }
+            )
+            isStartingFromPage2 = True
+        # Make next request to get next batch of data and pagination information
+        else:
+            if nextUrl not in [None, ""]:
+                response = session.get(
+                    url=nextUrl
+                )
+            else:
+                break
+        # Save next URL for next batch of processing
+        try:
+            nextUrl = response.links["next"]["url"]
+        except KeyError:
+            nextUrl = ""
+            
+        # Process current batch of data
+        if response.ok:
+            responseJson = response.json()
+            allItems.extend(responseJson)
+
+        # Get the actual PR itself
+        for i in range (0, len(allItems)):
+            url = allItems[i]["patch_url"] if allItems[i]["patch_url"] != "" else allItems[i]["diff_url"]
+            response = session.get(
+                url=url
+            )
+            allItems[i]["patchDetails"] = response.text
+    return allItems
+
+def getIssues(repoFullName = ""):
+    isStartingFromPage2 = False
+    nextUrl = ""
+    allItems = []
+
+    while True:
+        # Make first request to get first batch of data and pagination information
+        if not isStartingFromPage2:
+            response = session.get(
+                url=f"https://api.github.com/repos/{repoFullName}/issues",
+                params={
+                    "per_page": 100,
+                    "page": 1
+                }
+            )
+            isStartingFromPage2 = True
+        # Make next request to get next batch of data and pagination information
+        else:
+            if nextUrl not in [None, ""]:
+                response = session.get(
+                    url=nextUrl
+                )
+            else:
+                break
+        # Save next URL for next batch of processing
+        try:
+            nextUrl = response.links["next"]["url"]
+        except KeyError:
+            nextUrl = ""
+            
+        # Process current batch of data
+        if response.ok:
+            responseJson = response.json()
+            allItems.extend(responseJson)
+    return allItems
+
+def getIssueComments(repoFullName = ""):
+    isStartingFromPage2 = False
+    nextUrl = ""
+    allItems = []
+
+    while True:
+        # Make first request to get first batch of data and pagination information
+        if not isStartingFromPage2:
+            response = session.get(
+                url=f"https://api.github.com/repos/{repoFullName}/issues/comments",
+                params={
+                    "per_page": 100,
+                    "page": 1
+                }
+            )
+            isStartingFromPage2 = True
+        # Make next request to get next batch of data and pagination information
+        else:
+            if nextUrl not in [None, ""]:
+                response = session.get(
+                    url=nextUrl
+                )
+            else:
+                break
+        # Save next URL for next batch of processing
+        try:
+            nextUrl = response.links["next"]["url"]
+        except KeyError:
+            nextUrl = ""
+            
+        # Process current batch of data
+        if response.ok:
+            responseJson = response.json()
+            allItems.extend(responseJson)
+    return allItems
+
+def getCommitComments(repoFullName = ""):
+    isStartingFromPage2 = False
+    nextUrl = ""
+    allItems = []
+
+    while True:
+        # Make first request to get first batch of data and pagination information
+        if not isStartingFromPage2:
+            response = session.get(
+                url=f"https://api.github.com/repos/{repoFullName}/comments",
+                params={
+                    "per_page": 100,
+                    "page": 1
+                }
+            )
+            isStartingFromPage2 = True
+        # Make next request to get next batch of data and pagination information
+        else:
+            if nextUrl not in [None, ""]:
+                response = session.get(
+                    url=nextUrl
+                )
+            else:
+                break
+        # Save next URL for next batch of processing
+        try:
+            nextUrl = response.links["next"]["url"]
+        except KeyError:
+            nextUrl = ""
+            
+        # Process current batch of data
+        if response.ok:
+            responseJson = response.json()
+            allItems.extend(responseJson)
+    return allItems
+
+def getForks(repoFullName = ""):
+    isStartingFromPage2 = False
+    nextUrl = ""
+    allItems = []
+
+    while True:
+        # Make first request to get first batch of data and pagination information
+        if not isStartingFromPage2:
+            response = session.get(
+                url=f"https://api.github.com/repos/{repoFullName}/forks",
+                params={
+                    "per_page": 100,
+                    "page": 1
+                }
+            )
+            isStartingFromPage2 = True
+        # Make next request to get next batch of data and pagination information
+        else:
+            if nextUrl not in [None, ""]:
+                response = session.get(
+                    url=nextUrl
+                )
+            else:
+                break
+        # Save next URL for next batch of processing
+        try:
+            nextUrl = response.links["next"]["url"]
+        except KeyError:
+            nextUrl = ""
+            
+        # Process current batch of data
+        if response.ok:
+            responseJson = response.json()
+            allItems.extend(responseJson)
+    return allItems
+
 def getGists(userOrOrgName = ""):
     isStartingFromPage2 = False
     nextUrl = ""
@@ -62,6 +485,14 @@ def getGists(userOrOrgName = ""):
         if response.ok:
             responseJson = response.json()
             allItems.extend(responseJson)
+
+        # Get the actual gist itself
+        for i in range (0, len(allItems)):
+            response = session.get(
+                url=allItems[i]["url"]
+            )
+            responseJson = response.json()
+            allItems[i]["gistDetails"] = responseJson
     return allItems
 
 def getContributorsOfARepository(contributorsUrl):
@@ -193,6 +624,15 @@ def getCommits(repoFullname="", userOrOrgName=""):
                 allItems.extend(items)
             else:
                 pass # TODO: responseJson.errors[0]
+
+        # Get the actual commit itself
+        for i in range (0, len(allItems)):
+            response = session.get(
+                url=allItems[i]["url"]
+            )
+            responseJson = response.json()
+            allItems[i]["commitDetails"] = responseJson
+
         return allItems
     
     # Get commits of a user/org
@@ -270,6 +710,15 @@ def getCommits(repoFullname="", userOrOrgName=""):
                 allItems.extend(items)
             else:
                 pass # TODO: responseJson.errors[0]
+
+        # Get the actual commit itself
+        for i in range (0, len(allItems)):
+            response = session.get(
+                url=allItems[i]["url"]
+            )
+            responseJson = response.json()
+            allItems[i]["commitDetails"] = responseJson
+
         return allItems
 
 
@@ -280,8 +729,8 @@ def gather(outputDir, searchTerms=[], knownUsers=[], knownOrgs=[], maxSearchDept
     # Persistent data
     repositoriesToSearchIn = [] # [{  }]
     linkedUsersOrOrgs = []
-    gistsToSearchIn = []
-    commitsToSearchIn = []
+    userOrOrgGistsToSearchIn = []
+    userOrOrgCommitsToSearchIn = []
 
     # Prepare directory for output
     try:
@@ -349,81 +798,75 @@ def gather(outputDir, searchTerms=[], knownUsers=[], knownOrgs=[], maxSearchDept
 
     for i in range(0, len(repositoriesToSearchIn)):
         repositoriesToSearchIn[i]["evidenceChain"] = ["Directly mentioned by user"]
+        repositoriesToSearchIn[i]["useForFurtherSearchDepth"] = 2
 
     # Follow search depth, and gather more target repositories
-    newRepositoriesFound = []
-    searchDepth = 1
-
     if maxSearchDepth != 1:
         logText("[.] Finding contributors to above found repositories, then other repositories owned by them...")
-    while searchDepth != maxSearchDepth:
-        # Make set of contributors
-        newContributorUserOrOrgsFound = []
-        for repositoryToSearchIn in repositoriesToSearchIn if len(newRepositoriesFound) == 0 else newRepositoriesFound:
-            logText(f"[.] Search depth: {searchDepth}; finding contributors to repository '{repositoryToSearchIn["full_name"]}'")
 
-            contributors = getContributorsOfARepository(
-                contributorsUrl=repositoryToSearchIn["contributors_url"]
-            )
-            for contributor in contributors:
-                if contributor["login"] not in list(map(lambda x: x["login"], newContributorUserOrOrgsFound)):
-                    newContributorUserOrOrgsFound.append(contributor)
-                if contributor["login"] not in list(map(lambda x: x["login"], linkedUsersOrOrgs)):
-                    contributor["evidenceChain"] = [
-                        f"Found contributor to repository '{repositoryToSearchIn["full_name"]}'"
-                    ]
-                    linkedUsersOrOrgs.append(contributor)
+    searchDepth = 2
+    while searchDepth <= maxSearchDepth:
 
-            logText(f"[+] Search depth: {searchDepth}; found {len(contributors)} contributors to repository '{repositoryToSearchIn["full_name"]}'")
-        newRepositoriesFound.clear()
+        # Loop through all repositories
+        for repositoryToSearchIn in repositoriesToSearchIn:
+            # Only if repository was not already processed before
+            if repositoryToSearchIn["useForFurtherSearchDepth"] == searchDepth:
+
+                # Find contributors to already-found repositories
+                logText(f"[.] Search depth: {searchDepth}; finding contributors to repository '{repositoryToSearchIn["full_name"]}'")
+
+                contributors = getContributorsOfARepository(
+                    contributorsUrl=repositoryToSearchIn["contributors_url"]
+                )
+                for contributor in contributors:
+                    if contributor["login"] not in list(map(lambda x: x["login"], linkedUsersOrOrgs)):
+                        contributor["evidenceChain"] = [
+                            f"Found contributor to repository '{repositoryToSearchIn["full_name"]}'"
+                        ]
+                        contributor["useForFurtherSearchDepth"] = searchDepth
+                        linkedUsersOrOrgs.append(contributor)
+
+                logText(f"[+] Search depth: {searchDepth}; found {len(contributors)} contributors to repository '{repositoryToSearchIn["full_name"]}'")
+
+                # Find forks of existing repositories
+                logText(f"[.] Search depth: {searchDepth}; finding forks of repository '{repositoryToSearchIn["full_name"]}'")
+                forks = getForks(repoFullName=repositoryToSearchIn["full_name"])
+                for fork in forks:
+                    if fork["full_name"] not in list(map(lambda x: x["full_name"], repositoriesToSearchIn)):
+                        fork["evidenceChain"] = [
+                            f"Found fork '{fork["full_name"]}' of discovered repository '{repositoryToSearchIn["full_name"]}'"
+                        ]
+                        fork["useForFurtherSearchDepth"] = searchDepth + 1
+                        repositoriesToSearchIn.append(fork)
+                logText(f"[+] Search depth: {searchDepth}; found {len(forks)} forks to repository '{repositoryToSearchIn["full_name"]}'")
+
+
 
         # Make set of repositories to process
-        for userOrOrg in newContributorUserOrOrgsFound:
-            logText(f"[.] Search depth: {searchDepth}; finding repositories owned by {userOrOrg["type"].lower()} '{userOrOrg["login"]}'")
+        for userOrOrg in linkedUsersOrOrgs:
+            # Only if user/org was not already processed before
+            if userOrOrg["useForFurtherSearchDepth"] == searchDepth:
+                logText(f"[.] Search depth: {searchDepth}; finding repositories owned by {userOrOrg["type"].lower()} '{userOrOrg["login"]}'")
 
-            repositories = getReposOwnedByUserOrOrg(
-                userOrOrgName=userOrOrg["login"],
-                isUser=userOrOrg["type"].lower() == "user"
-            )
-            for repository in repositories:
-                if repository["name"] not in list(map(lambda x: x["name"], repositoriesToSearchIn)):
-                    repository["evidenceChain"] = [
-                        f"Found linked to {userOrOrg["type"].lower()} '{userOrOrg["login"]}', who is a contributor of repository '{repository["full_name"]}'"
-                        ]
+                repositories = getReposOwnedByUserOrOrg(
+                    userOrOrgName=userOrOrg["login"],
+                    isUser=userOrOrg["type"].lower() == "user"
+                )
+                for repository in repositories:
+                    if repository["name"] not in list(map(lambda x: x["name"], repositoriesToSearchIn)):
+                        repository["evidenceChain"] = [
+                            f"Found linked to {userOrOrg["type"].lower()} '{userOrOrg["login"]}', who is a contributor of repository '{repository["full_name"]}'"
+                            ]
+                        repository["useForFurtherSearchDepth"] = searchDepth + 1
+                        repositoriesToSearchIn.append(repository)
 
-                    repositoriesToSearchIn.append(repository)
-                    newRepositoriesFound.append(repository)
-
-            logText(f"[+] Search depth: {searchDepth}; found {len(repositories)} repositories owned by {userOrOrg["type"].lower()} '{userOrOrg["login"]}'")
+                logText(f"[+] Search depth: {searchDepth}; found {len(repositories)} repositories owned by {userOrOrg["type"].lower()} '{userOrOrg["login"]}'")
 
         # Reduce search depth by 1 because all processing is done
         searchDepth += 1
 
-    # Gist of users: knownUsers + knownOrgs + linkedUsersOrOrgs
-    logText("[.] Finding gists...")
-
-    for userOrOrg in knownUsers + knownOrgs:
-        response = getGists(userOrOrgName=userOrOrg["login"])
-        for i in range(0, len(response)):
-            response[i]["evidenceChain"] = [
-                f"From user/organisation '{userOrOrg["login"]}' which was provided by user"
-            ]
-        gistsToSearchIn.extend(response)
-
-        logText(f"[+] found {len(response)} gists by provided user/organisation '{userOrOrg["login"]}'")
-    for userOrOrg in linkedUsersOrOrgs:
-        response = getGists(userOrOrgName=userOrOrg["login"])
-        for i in range(0, len(response)):
-            response[i]["evidenceChain"] = [
-                f"From user/organisation '{userOrOrg["login"]}' which was found linked to a discovered repository. User/org's evidence chain: {userOrOrg["evidenceChain"]}"
-            ]
-        gistsToSearchIn.extend(response)
-        
-        logText(f"[+] found {len(response)} gists by discovered user/organisation '{userOrOrg["login"]}'")
-
-
-    # Commits by users: knownUsers + knownOrgs + linkedUsersOrOrgs
-    logText("[.] Finding commits by users and organsations...")
+    # Process all users (knownUsers + knownOrgs + linkedUsersOrOrgs): commits, gists
+    logText("[.] Finding all commits and gists by all given and found users and organsations...")
 
     for userOrOrg in knownUsers + knownOrgs:
         response = getCommits(userOrOrgName=userOrOrg["login"])
@@ -431,9 +874,16 @@ def gather(outputDir, searchTerms=[], knownUsers=[], knownOrgs=[], maxSearchDept
             response[i]["evidenceChain"] = [
                 f"From user/organisation '{userOrOrg["login"]}' which was provided by user"
             ]
-        commitsToSearchIn.extend(response)
+        userOrOrgCommitsToSearchIn.extend(response)
+        logText(f"[+] Found {len(response)} commits by given user/organisation '{userOrOrg["login"]}'")
 
-        logText(f"[+] found {len(response)} commits by given user/organisation '{userOrOrg["login"]}'")
+        response = getGists(userOrOrgName=userOrOrg["login"])
+        for i in range(0, len(response)):
+            response[i]["evidenceChain"] = [
+                f"From user/organisation '{userOrOrg["login"]}' which was provided by user"
+            ]
+        userOrOrgGistsToSearchIn.extend(response)
+        logText(f"\t[+] found {len(response)} gists by provided user/organisation '{userOrOrg["login"]}'")
 
     for userOrOrg in linkedUsersOrOrgs:
         response = getCommits(userOrOrgName=userOrOrg["login"])
@@ -441,136 +891,129 @@ def gather(outputDir, searchTerms=[], knownUsers=[], knownOrgs=[], maxSearchDept
             response[i]["evidenceChain"] = [
                 f"From user/organisation '{userOrOrg["login"]}' which was found linked to a discovered repository. User/org's evidence chain: {userOrOrg["evidenceChain"]}"
             ]
-        commitsToSearchIn.extend(response)
+        userOrOrgCommitsToSearchIn.extend(response)
+        logText(f"[+] Found {len(response)} commits by discovered user/organisation '{userOrOrg["login"]}'")
 
-        logText(f"[+] found {len(response)} gists by discovered user/organisation '{userOrOrg["login"]}'")
+        response = getGists(userOrOrgName=userOrOrg["login"])
+        for i in range(0, len(response)):
+            response[i]["evidenceChain"] = [
+                f"From user/organisation '{userOrOrg["login"]}' which was found linked to a discovered repository. User/org's evidence chain: {userOrOrg["evidenceChain"]}"
+            ]
+        userOrOrgGistsToSearchIn.extend(response)
+    
+        logText(f"\t[+] found {len(response)} gists by discovered user/organisation '{userOrOrg["login"]}'")
 
-    # Process repos: forks, commits, comments. issues, issue comments, contents
+    # Process all repos: commits, commit comments, issues, issue comments and PRs
+    logText("[.] Processing all commits, commit comments, issues, issue comments and PRs of each found repository...")
 
+    for i in range(0, len(repositoriesToSearchIn)):
+        # All commits of the repository
+        logText(f"\t[.] Finding all commits in repository '{repositoriesToSearchIn[i]["full_name"]}'...")
+        commits = getCommits(repoFullname=repositoriesToSearchIn[i]["full_name"])
+        for i in range(0, len(commits)):
+            commits[i]["evidenceChain"] = [
+                f"Commit from repository '{repositoriesToSearchIn[i]["full_name"]}'; repository's evidence chain: {repositoriesToSearchIn[i]["evidenceChain"]}"
+            ]
+        repositoriesToSearchIn[i]["allCommits"] = commits
+        logText(f"\t[+] Found {len(commits)} commits in repository '{repositoriesToSearchIn[i]["full_name"]}'...")
+
+        # All commit comments of the repository
+        logText(f"\t[.] Finding all commit comments in repository '{repositoriesToSearchIn[i]["full_name"]}'...")
+        commitComments = getCommitComments(repoFullname=repositoriesToSearchIn[i]["full_name"])
+        for i in range(0, len(commitComments)):
+            commitComments[i]["evidenceChain"] = [
+                f"Comment in commit {commitComments[i]["commit_id"]} in repository '{repositoriesToSearchIn[i]["full_name"]}'; repository's evidence chain: {repositoriesToSearchIn[i]["evidenceChain"]}"
+            ]
+        repositoriesToSearchIn[i]["commitComments"] = commitComments
+        logText(f"\t[+] Found {len(commitComments)} commit comments in repository '{repositoriesToSearchIn[i]["full_name"]}'...")
+
+        # All issues of the repository
+        logText(f"\t[.] Finding all issues in repository '{repositoriesToSearchIn[i]["full_name"]}'...")
+        issues = getIssues(repoFullname=repositoriesToSearchIn[i]["full_name"])
+        for i in range(0, len(issues)):
+            issues[i]["evidenceChain"] = [
+                f"Issue from repository '{repositoriesToSearchIn[i]["full_name"]}'; repository's evidence chain: {repositoriesToSearchIn[i]["evidenceChain"]}"
+            ]
+        repositoriesToSearchIn[i]["issues"] = issues
+        logText(f"\t[+] Found {len(issues)} issues in repository '{repositoriesToSearchIn[i]["full_name"]}'...")
+
+        # All issue comments of the repository
+        logText(f"\t[.] Finding all issue comments in repository '{repositoriesToSearchIn[i]["full_name"]}'...")
+        issueComments = getIssueComments(repoFullname=repositoriesToSearchIn[i]["full_name"])
+        for i in range(0, len(issueComments)):
+            issueComments[i]["evidenceChain"] = [
+                f"Comment in issue '{issueComments[i]["html_url"]}' in repository '{repositoriesToSearchIn[i]["full_name"]}'; repository's evidence chain: {repositoriesToSearchIn[i]["evidenceChain"]}"
+            ]
+        repositoriesToSearchIn[i]["issueComments"] = issueComments
+        logText(f"\t[+] Found {len(issueComments)} issueComments in repository '{repositoriesToSearchIn[i]["full_name"]}'...")
+
+        # All PRs of the repository
+        logText(f"\t[.] Finding all PRs in repository '{repositoriesToSearchIn[i]["full_name"]}'...")
+        pullRequests = getPullRequests(repoFullname=repositoriesToSearchIn[i]["full_name"])
+        for i in range(0, len(commits)):
+            pullRequests[i]["evidenceChain"] = [
+                f"PR {pullRequests[i]["number"]} from repository '{repositoriesToSearchIn[i]["full_name"]}'; repository's evidence chain: {repositoriesToSearchIn[i]["evidenceChain"]}"
+            ]
+        repositoriesToSearchIn[i]["pullRequests"] = pullRequests
+        logText(f"\t[+] Found {len(pullRequests)} PRs in repository '{repositoriesToSearchIn[i]["full_name"]}'...")
+
+    # Download the actual data into proper directories
+    logText(f"[.] Saving all data at '{outputDir}'...")
+
+    saveGists(
+            projectDirPath=outputDir,
+            gistsList=userOrOrgGistsToSearchIn
+        )
+    logText(f"\t [+] Saved all gists")
+
+    saveCommits(
+        repoSaveDirPath=outputDir,
+        commitsList=userOrOrgCommitsToSearchIn
+    )
+    logText(f"\t [+] Saved all commits mapped from users/orgs")
+
+    allReposPath = path.join(outputDir, "repos")
+    mkdir(allReposPath)
+    for repositoryToSearchIn in repositoriesToSearchIn:
+        repoPath = path.join(allReposPath, repositoryToSearchIn["full_name"].replace("/", "__"))
+        mkdir(repoPath)
+
+        saveCommits(
+            repoSaveDirPath=repoPath,
+            commitsList=repositoryToSearchIn["allCommits"]
+        )
+        saveCommitComments(
+            repoSaveDirPath=repoPath,
+            commitCommentsList=repositoryToSearchIn["commitComments"]
+        )
+        saveIssues(
+            repoSaveDirPath=repoPath,
+            issuesList=repositoryToSearchIn["issues"]
+        )
+        saveIssueComments(
+            repoSaveDirPath=repoPath,
+            issueCommentsList=repositoryToSearchIn["issueComments"]
+        )
+        savePullRequests(
+            repoSaveDirPath=repoPath,
+            pullRequestsList=repositoryToSearchIn["pullRequests"]
+        )
+        logText(f"\t [+] Saved all extracted intel from repo '{repositoryToSearchIn["full_name"]}'")
+
+        cloneRepository(
+            gitRepositoryCloneUrl=repositoryToSearchIn["clone_url"],
+            gitRepositorySavePath=path.join(repoPath, repositoryToSearchIn["name"])
+        )
+        logText(f"\t [+] Cloned repo '{repositoryToSearchIn["full_name"]}'")
+
+    # Run trufflehog
+    runTrufflehog(
+        logText=logText,
+        outputDir=outputDir,
+        repositoriesToSearchIn=repositoriesToSearchIn
+    )
 
     # Close open files
     logOutputFile.close()
-    resultsOutputFile.close()
+    resultsOutputFile.close() #TODO write results
 
-    # 
-
-    """
-        inside items:
-        {
-            "id": 844388579,
-            "node_id": "R_kgDOMlRY4w",
-            "name": "malware-study",
-            "full_name": "captain-woof/malware-study",
-            "private": false,
-            "owner": {
-                "login": "captain-woof",
-                "id": 72122026,
-                "node_id": "MDQ6VXNlcjcyMTIyMDI2",
-                "avatar_url": "https://avatars.githubusercontent.com/u/72122026?v=4",
-                "gravatar_id": "",
-                "url": "https://api.github.com/users/captain-woof",
-                "html_url": "https://github.com/captain-woof",
-                "followers_url": "https://api.github.com/users/captain-woof/followers",
-                "following_url": "https://api.github.com/users/captain-woof/following{/other_user}",
-                "gists_url": "https://api.github.com/users/captain-woof/gists{/gist_id}",
-                "starred_url": "https://api.github.com/users/captain-woof/starred{/owner}{/repo}",
-                "subscriptions_url": "https://api.github.com/users/captain-woof/subscriptions",
-                "organizations_url": "https://api.github.com/users/captain-woof/orgs",
-                "repos_url": "https://api.github.com/users/captain-woof/repos",
-                "events_url": "https://api.github.com/users/captain-woof/events{/privacy}",
-                "received_events_url": "https://api.github.com/users/captain-woof/received_events",
-                "type": "User",
-                "user_view_type": "public",
-                "site_admin": false
-            },
-            "html_url": "https://github.com/captain-woof/malware-study",
-            "description":"My projects to understand malware development and detection. Use responsibly. I\'m not responsible if you cause unauthorised damage to anyone\'s system.",
-            "fork": false,
-            "url": "https://api.github.com/repos/captain-woof/malware-study",
-            "forks_url": "https://api.github.com/repos/captain-woof/malware-study/forks",
-            "keys_url": "https://api.github.com/repos/captain-woof/malware-study/keys{/key_id}",
-            "collaborators_url": "https://api.github.com/repos/captain-woof/malware-study/collaborators{/collaborator}",
-            "teams_url": "https://api.github.com/repos/captain-woof/malware-study/teams",
-            "hooks_url": "https://api.github.com/repos/captain-woof/malware-study/hooks",
-            "issue_events_url": "https://api.github.com/repos/captain-woof/malware-study/issues/events{/number}",
-            "events_url": "https://api.github.com/repos/captain-woof/malware-study/events",
-            "assignees_url": "https://api.github.com/repos/captain-woof/malware-study/assignees{/user}",
-            "branches_url": "https://api.github.com/repos/captain-woof/malware-study/branches{/branch}",
-            "tags_url": "https://api.github.com/repos/captain-woof/malware-study/tags",
-            "blobs_url": "https://api.github.com/repos/captain-woof/malware-study/git/blobs{/sha}",
-            "git_tags_url": "https://api.github.com/repos/captain-woof/malware-study/git/tags{/sha}",
-            "git_refs_url": "https://api.github.com/repos/captain-woof/malware-study/git/refs{/sha}",
-            "trees_url": "https://api.github.com/repos/captain-woof/malware-study/git/trees{/sha}",
-            "statuses_url": "https://api.github.com/repos/captain-woof/malware-study/statuses/{sha}",
-            "languages_url": "https://api.github.com/repos/captain-woof/malware-study/languages",
-            "stargazers_url": "https://api.github.com/repos/captain-woof/malware-study/stargazers",
-            "contributors_url": "https://api.github.com/repos/captain-woof/malware-study/contributors",
-            "subscribers_url": "https://api.github.com/repos/captain-woof/malware-study/subscribers",
-            "subscription_url": "https://api.github.com/repos/captain-woof/malware-study/subscription",
-            "commits_url": "https://api.github.com/repos/captain-woof/malware-study/commits{/sha}",
-            "git_commits_url": "https://api.github.com/repos/captain-woof/malware-study/git/commits{/sha}",
-            "comments_url": "https://api.github.com/repos/captain-woof/malware-study/comments{/number}",
-            "issue_comment_url": "https://api.github.com/repos/captain-woof/malware-study/issues/comments{/number}",
-            "contents_url": "https://api.github.com/repos/captain-woof/malware-study/contents/{+path}",
-            "compare_url": "https://api.github.com/repos/captain-woof/malware-study/compare/{base}...{head}",
-            "merges_url": "https://api.github.com/repos/captain-woof/malware-study/merges",
-            "archive_url": "https://api.github.com/repos/captain-woof/malware-study/{archive_format}{/ref}",
-            "downloads_url": "https://api.github.com/repos/captain-woof/malware-study/downloads",
-            "issues_url": "https://api.github.com/repos/captain-woof/malware-study/issues{/number}",
-            "pulls_url": "https://api.github.com/repos/captain-woof/malware-study/pulls{/number}",
-            "milestones_url": "https://api.github.com/repos/captain-woof/malware-study/milestones{/number}",
-            "notifications_url": "https://api.github.com/repos/captain-woof/malware-study/notifications{?since,all,participating}",
-            "labels_url": "https://api.github.com/repos/captain-woof/malware-study/labels{/name}",
-            "releases_url": "https://api.github.com/repos/captain-woof/malware-study/releases{/id}",
-            "deployments_url": "https://api.github.com/repos/captain-woof/malware-study/deployments",
-            "created_at": "2024-08-19T06:47:08Z",
-            "updated_at": "2026-11-08T09:21:34Z",
-            "pushed_at": "2026-05-04T14:33:03Z",
-            "git_url": "git://github.com/captain-woof/malware-study.git",
-            "ssh_url": "git@github.com:captain-woof/malware-study.git",
-            "clone_url": "https://github.com/captain-woof/malware-study.git",
-            "svn_url": "https://github.com/captain-woof/malware-study",
-            "homepage": "",
-            "size": 422156,
-            "stargazers_count": 113,
-            "watchers_count": 113,
-            "language": "C",
-            "has_issues": true,
-            "has_projects": true,
-            "has_wiki": true,
-            "has_pages": false,
-            "has_discussions": false,
-            "forks_count": 18,
-            "mirror_url": null,
-            "archived": false,
-            "disabled": false,
-            "open_issues_count": 0,
-            "license": null,
-            "allow_forking": true,
-            "is_template": false,
-            "web_commit_signoff_required": false,
-            "has_pull_requests": true,
-            "pull_request_creation_policy": "all",
-            "topics": [
-                "malware-analysis",
-                "malware-development",
-                "malware-protection",
-                "malware-research"
-            ],
-            "visibility": "public",
-            "forks": 18,
-            "open_issues": 0,
-            "watchers": 113,
-            "default_branch": "main",
-            "permissions": {
-                "admin": true,
-                "maintain": true,
-                "push": true,
-                "triage": true,
-                "pull": true
-            },
-            "score": 1.0,
-            "text_matches": []
-        },
-        """
-    
