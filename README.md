@@ -7,7 +7,7 @@ OSINT automation for pentests and red team engagements.
 
 ```bash
 sudo apt update -y
-sudo apt install libcurl4-openssl-dev libssl-dev python3-dev libxml2-dev libxslt1-dev zlib1g-dev build-essential
+sudo apt install libcurl4-openssl-dev libssl-dev python3-dev libxml2-dev libxslt1-dev zlib1g-dev build-essential libyaml-dev
 
 python3 -m virtualenv venv
 source ./venv/bin/activate
