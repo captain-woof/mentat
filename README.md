@@ -28,7 +28,7 @@ cp ./.env.example ./.env
 
 #### GitHub
 
-For GitHub PAT token in environment variable ``, obtain yours at [github.com/settings/tokens](https://github.com/settings/tokens).
+For GitHub PAT token in environment variable `GITHUB_PAT_TOKEN`, obtain yours at [github.com/settings/tokens](https://github.com/settings/tokens).
 
 ## Running
 
