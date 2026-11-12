@@ -15,6 +15,8 @@ source ./venv/bin/activate
 pip3 --no-cache-dir install --verbose  --force-reinstall -r requirements.txt # if you get `lxml` errors here, remove the `lxml` package's version number in the `requirements.txt` file and try again.
 ```
 
+Also download Trufflehog v3 from [https://github.com/trufflesecurity/trufflehog/releases/latest](https://github.com/trufflesecurity/trufflehog/releases/latest), and put the `trufflehog` binary somewhere on your `PATH`. Tested with [v3.99.8](https://github.com/trufflesecurity/trufflehog/releases/tag/v3.99.8).
+
 ### Environment variables
 
 Use the provided `.env.example` as a template for the `.env` file.
