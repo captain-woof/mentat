@@ -51,9 +51,9 @@ def gather(
     page = browser.new_page()
 
     page.goto("https://google.com", wait_until="domcontentloaded")
-    page.locator(selector='textarea[title="Search"]').click()
-    typeTextHuman(locator=page.locator(selector='textarea[title="Search"]'), text=(random.choice(companyNames + companyDomains)))
-    page.locator(selector='textarea[title="Search"]').press("Enter")
+    page.locator(selector='textarea[aria-label="Search"]').click()
+    typeTextHuman(locator=page.locator(selector='textarea[aria-label="Search"]'), text=(random.choice(companyNames + companyDomains)))
+    page.locator(selector='textarea[aria-label="Search"]').press("Enter")
     
     page.wait_for_load_state("domcontentloaded")
     page.wait_for_load_state("networkidle")

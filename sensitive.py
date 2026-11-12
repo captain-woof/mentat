@@ -196,9 +196,9 @@ def gatherThread(
     pageGoogle = browser.new_page()
 
     pageGoogle.goto("https://google.com", wait_until="domcontentloaded")
-    pageGoogle.locator(selector='textarea[title="Search"]').click()
-    typeTextHuman(locator=pageGoogle.locator(selector='textarea[title="Search"]'), text=(companyNames + companyDomains)[0])
-    pageGoogle.locator(selector='textarea[title="Search"]').press("Enter")
+    pageGoogle.locator(selector='textarea[aria-label="Search"]').click()
+    typeTextHuman(locator=pageGoogle.locator(selector='textarea[aria-label="Search"]'), text=(companyNames + companyDomains)[0])
+    pageGoogle.locator(selector='textarea[aria-label="Search"]').press("Enter")
     
     # Captcha alert
     attemptsSinceLastCaptcha = 0
