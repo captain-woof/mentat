@@ -248,6 +248,58 @@ def cloneRepository(gitRepositoryCloneUrl, gitRepositorySavePath):
 
     return (stdout, stderr, p.returncode)
 
+def saveCode(repoSaveDirPath, resultsFromCodeSearch):
+    codeDirPath = path.join(repoSaveDirPath, "gists")
+    try:
+        mkdir(codeDirPath)
+    except FileExistsError:
+        pass
+    except Exception as e:
+        printError(f"[!] Could not create directory '{codeDirPath}'; error: {e}")
+
+    for resultFromCodeSearch in resultsFromCodeSearch:
+        try:
+            repoFullName = resultFromCodeSearch["repository"]["full_name"]
+            filePath = resultFromCodeSearch["path"]
+            htmlUrl = resultFromCodeSearch["html_url"]
+            sha = resultFromCodeSearch["sha"]
+            textMatches = resultFromCodeSearch["text_matches"]
+
+            textMatchesContents = ""
+            for i, textMatch in enumerate(textMatches):
+                textMatchesContents += f"""Match #{i+1}
+
+URL: {textMatch["object_url"]}
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+{textMatch["fragment"]}
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+"""
+
+                codePath = path.join(codeDirPath, f"{repoFullName}_{filePath}_{sha}.md")
+                codeContents = f"""# Code {filePath}
+
+------------
+# URL: {htmlUrl}
+------------
+# EVIDENCE CHAIN:
+{resultFromCodeSearch.get("evidenceChain", [])}
+------------
+# RESULTS:
+------------
+Repository: {repoFullName}
+Filename: {filePath}
+SHA: {sha}
+------------
+# MATCHES:
+------------
+{textMatchesContents}
+"""
+            with open(codePath, "a") as codeFile:
+                codeFile.write(codeContents)
+                codeFile.flush()
+        except Exception as e:
+            printError(f"[!] Failed to save a code search result; error: {e}")
+
 def saveGists(projectDirPath, gistsList = []):
     gistsPath = path.join(projectDirPath, "gists")
     try:
@@ -877,11 +929,63 @@ def getReposOwnedByUserOrOrg(userOrOrgName, isUser = True):
             break
     return allItems
 
-def getReposFromSearchTerm(searchTerm):
+def getReposFromCodeSearch(searchTerm):
     isStartingFromPage2 = False
     nextUrl = ""
     allItems = []
 
+    # Search in code
+    while True:
+        # Make first request to get first batch of data and pagination information
+        try:
+            if not isStartingFromPage2:
+                response = sessionSlow.get(
+                    url="https://api.github.com/search/code",
+                    params={
+                        "q": f"{searchTerm} in:file,path",
+                        "per_page": 100,
+                        "page": 1
+                    }
+                )
+                isStartingFromPage2 = True
+            # Make next request to get next batch of data and pagination information
+            else:
+                if nextUrl not in [None, ""]:
+                    response = sessionSlow.get(
+                        url=nextUrl
+                    )
+                else:
+                    break
+        except Exception as e:
+            printError(f"[!] Request for repositories matching code search term '{searchTerm}' failed; error: {e}")
+            break
+        # Save next URL for next batch of processing
+        try:
+            nextUrl = response.links["next"]["url"]
+        except KeyError:
+            nextUrl = ""
+
+        # Process current batch of data
+        if response.ok:
+            try:
+                responseJson = response.json()
+                items = responseJson["items"]
+            except Exception as e:
+                printError(f"[!] Could not parse repositories response for code search term '{searchTerm}'; error: {e}")
+                break
+            allItems.extend(items)
+        else:
+            printError(f"[!] Failed to get repositories matching code search term '{searchTerm}'; HTTP {response.status_code}; moving on with results gathered so far")
+            break
+    
+    return allItems
+
+def getReposFromNameSearchTerm(searchTerm):
+    isStartingFromPage2 = False
+    nextUrl = ""
+    allItems = []
+
+    # Search in repositories
     while True:
         # Make first request to get first batch of data and pagination information
         try:
@@ -889,7 +993,7 @@ def getReposFromSearchTerm(searchTerm):
                 response = session.get(
                     url="https://api.github.com/search/repositories",
                     params={
-                        "q": f"{searchTerm} fork:true",
+                        "q": f"{searchTerm} fork:true in:name,description,topics,readme",
                         "per_page": 100,
                         "page": 1
                     }
@@ -1237,9 +1341,29 @@ def gather(outputDir, githubPatToken="", searchTerms=[], knownUsers=[], knownOrg
         logText("")
         logText("Finding repositories matching given search terms...", kind="stage")
     for searchTerm in searchTerms:
-        logText(f"Finding repositories matching search term '{searchTerm}'...", level=1)
+        repositories = []
 
-        repositories = getReposFromSearchTerm(searchTerm=searchTerm)
+        # Use search term in readme, title, description, etc
+        logText(f"Finding repositories matching search term '{searchTerm}' in title, readme, description, etc...", level=1)
+        repositories.extend(getReposFromNameSearchTerm(searchTerm=searchTerm))
+
+        # Use search term in code
+        logText(f"Finding repositories matching search term '{searchTerm}' in code...", level=1)
+        resultsFromCodeSearch = getReposFromCodeSearch(searchTerm=searchTerm)
+        for i in range(0, len(resultsFromCodeSearch)):
+            repoFullName = resultsFromCodeSearch[i]["repository"]["full_name"]
+            filePath = resultsFromCodeSearch[i]["path"]
+            htmlUrl = resultsFromCodeSearch[i]["html_url"]
+            sha = resultsFromCodeSearch[i]["sha"]
+            textMatches = resultsFromCodeSearch[i]["text_matches"]
+
+            resultsFromCodeSearch[i]["evidenceChain"] = [
+                f"{len(textMatches)} match(s) found for code search term '{searchTerm}' in repo '{repoFullName}', file '{filePath}'({sha})"
+            ]
+
+            repositories.append(resultsFromCodeSearch[i]["repository"])
+
+        logText(f"Code search found {len(resultsFromCodeSearch)} matches across repositories.", level=1, kind="success")
 
         newRepositoriesCount = 0
         for repository in repositories:
@@ -1438,6 +1562,12 @@ def gather(outputDir, githubPatToken="", searchTerms=[], knownUsers=[], knownOrg
         commitsList=userOrOrgCommitsToSearchIn
     )
     logText("Saved all commits mapped from users/orgs", level=1, kind="success")
+
+    saveCode(
+        repoSaveDirPath=outputDir,
+        resultsFromCodeSearch=resultsFromCodeSearch
+    )
+    logText("Saved all code search results", level=1, kind="success")
 
     allReposPath = path.join(outputDir, "repos")
     try:
