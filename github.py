@@ -249,7 +249,7 @@ def cloneRepository(gitRepositoryCloneUrl, gitRepositorySavePath):
     return (stdout, stderr, p.returncode)
 
 def saveCode(repoSaveDirPath, resultsFromCodeSearch):
-    codeDirPath = path.join(repoSaveDirPath, "gists")
+    codeDirPath = path.join(repoSaveDirPath, "code-search")
     try:
         mkdir(codeDirPath)
     except FileExistsError:
