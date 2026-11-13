@@ -1345,7 +1345,12 @@ def gather(outputDir, githubPatToken="", searchTerms=[], knownUsers=[], knownOrg
 
         # Use search term in readme, title, description, etc
         logText(f"Finding repositories matching search term '{searchTerm}' in title, readme, description, etc...", level=1)
-        repositories.extend(getReposFromNameSearchTerm(searchTerm=searchTerm))
+        resultsFromNameSearch = getReposFromNameSearchTerm(searchTerm=searchTerm)
+        for i in range(0, len(resultsFromNameSearch)):
+            resultsFromNameSearch[i]["evidenceChain"] = [
+                f"Found from search term '{searchTerm}'"
+            ]
+            repositories.append(resultsFromNameSearch[i])
 
         # Use search term in code
         logText(f"Finding repositories matching search term '{searchTerm}' in code...", level=1)
@@ -1361,16 +1366,17 @@ def gather(outputDir, githubPatToken="", searchTerms=[], knownUsers=[], knownOrg
                 f"{len(textMatches)} match(s) found for code search term '{searchTerm}' in repo '{repoFullName}', file '{filePath}'({sha})"
             ]
 
-            repositories.append(resultsFromCodeSearch[i]["repository"])
+            repository = resultsFromCodeSearch[i]["repository"]
+            repository["evidenceChain"] = [
+                    f"Found from code search term '{searchTerm}', in file '{filePath}'"
+                ]
+            repositories.append(repository)
 
         logText(f"Code search found {len(resultsFromCodeSearch)} matches across repositories.", level=1, kind="success")
 
         newRepositoriesCount = 0
         for repository in repositories:
             if repository["full_name"] not in seenRepositoryFullNames:
-                repository["evidenceChain"] = [
-                    f"Found from search term '{searchTerm}'"
-                ]
                 repositoriesToSearchIn.append(repository)
                 seenRepositoryFullNames.add(repository["full_name"])
                 newRepositoriesCount += 1
